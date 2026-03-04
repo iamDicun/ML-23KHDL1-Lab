@@ -1,8 +1,15 @@
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import HomePage from './pages/HomePage'
+import CitizenLoginPage from './pages/CitizenLoginPage'
+
 function App() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white">
-      <h1 className="text-4xl font-bold text-gray-900">Hello World</h1>
-    </div>
+    <Router>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/dang-nhap/cong-dan" element={<CitizenLoginPage />} />
+      </Routes>
+    </Router>
   )
 }
 
