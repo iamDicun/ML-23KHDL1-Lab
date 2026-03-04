@@ -2,7 +2,8 @@ import express from 'express'
 import cors from 'cors'
 import { config } from './config/env.js'
 import { initDatabase } from './config/database.js'
-import userRoutes from './routes/userRoutes.js'
+import congDanRoutes from './routes/congDanRoutes.js'
+import canBoRoutes from './routes/canBoRoutes.js'
 import { apiKeyAuth } from './middlewares/apiKeyAuth.js'
 import { errorHandler, notFound } from './middlewares/errorHandler.js'
 
@@ -13,20 +14,25 @@ app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
-// Root endpoint (không cần auth)
+// Root endpoint
 app.get('/', (req, res) => {
   res.json({ 
-    message: 'Welcome to Express API',
+    message: 'Cổng Dịch Vụ Công - Bộ VHTTDL API',
     version: '1.0.0',
-    environment: config.nodeEnv
+    environment: config.nodeEnv,
+    endpoints: {
+      congDan: '/cong-dan',
+      canBo: '/can-bo'
+    }
   })
 })
 
 // API Key authentication middleware
 app.use(apiKeyAuth)
 
-// Routes (yêu cầu API key)
-app.use('/users', userRoutes)
+// Routes
+app.use('/cong-dan', congDanRoutes)
+app.use('/can-bo', canBoRoutes)
 
 // Error handling
 app.use(notFound)
@@ -35,12 +41,11 @@ app.use(errorHandler)
 // Start server
 const startServer = async () => {
   try {
-    // Initialize database (chỉ load config, chưa kết nối thật)
     await initDatabase()
-    
     app.listen(config.port, () => {
       console.log(`🚀 Server running on http://localhost:${config.port}`)
       console.log(`📝 Environment: ${config.nodeEnv}`)
+      console.log(`📋 Endpoints: /cong-dan | /can-bo`)
     })
   } catch (error) {
     console.error('Failed to start server:', error)
@@ -49,3 +54,4 @@ const startServer = async () => {
 }
 
 startServer()
+

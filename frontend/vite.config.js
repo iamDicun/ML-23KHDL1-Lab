@@ -7,7 +7,11 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/users': {
+      '/cong-dan': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+      },
+      '/can-bo': {
         target: 'http://localhost:5000',
         changeOrigin: true,
       }
