@@ -6,10 +6,10 @@ from tqdm import tqdm
 from sklearn.metrics import accuracy_score, f1_score
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-checkpoint_path = "model_weights\\checkpoint-5625"
+checkpoint_path = "model_weights"
 
-print("Đang tải mô hình và tokenizer, anh chờ xíu nha...")
-tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base-v2")
+print("Đang tải mô hình và tokenizer (Loading model and tokenizer)...")
+tokenizer = AutoTokenizer.from_pretrained("model_weights")
 model = AutoModelForSequenceClassification.from_pretrained(checkpoint_path).to(device)
 model.eval()
 
@@ -34,7 +34,7 @@ df['Review'] = df['Review'].fillna("")
 
 batch_size = 128 
 
-print("Bắt đầu gán nhãn hàng loạt xé gió...")
+print("Bắt đầu quá trình gán nhãn hàng loạt (Starting batch inference)...")
 for aspect in aspects:
     print(f"\nĐang xử lý khía cạnh: {aspect}")
     all_preds = []
