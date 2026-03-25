@@ -1,0 +1,27 @@
+{
+  "target_size": 3000,
+  "actual_size": 3000,
+  "hard_target_ratio": 0.7,
+  "medium_target_ratio": 0.2,
+  "random_target_ratio": 0.1,
+  "hard_definition": {
+    "conf_mean_range": [
+      0.75,
+      0.8
+    ],
+    "or_conf_min_below": 0.6
+  },
+  "medium_definition": {
+    "conf_mean_range": [
+      0.8,
+      0.9
+    ]
+  },
+  "random_definition": "random from boundary removed samples and kept samples",
+  "group_counts": {
+    "hard": 2100,
+    "medium": 566,
+    "random": 274,
+    "fallback": 60
+  }
+}

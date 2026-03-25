@@ -1,0 +1,33 @@
+{
+  "input_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\output_results.csv",
+  "threshold_from_step1": 0.85,
+  "conf_min_floor": 0.5,
+  "before_rows": 35183,
+  "after_rows": 17295,
+  "removed_rows": 17888,
+  "retention_ratio": 0.49157263451098543,
+  "conf_mean_before": {
+    "mean": 0.8416469876550228,
+    "median": 0.8489166666666668,
+    "p25": 0.8071083333333333,
+    "p75": 0.8852000000000001
+  },
+  "conf_mean_after": {
+    "mean": 0.8868661193023032,
+    "median": 0.8858166666666666,
+    "p25": 0.8680916666666667,
+    "p75": 0.9045666666666666
+  },
+  "conf_min_before": {
+    "mean": 0.6853727254640025,
+    "median": 0.6836,
+    "p25": 0.5757,
+    "p75": 0.7935
+  },
+  "conf_min_after": {
+    "mean": 0.7813877074298929,
+    "median": 0.795,
+    "p25": 0.73,
+    "p75": 0.8486
+  }
+}

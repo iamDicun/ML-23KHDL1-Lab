@@ -1,0 +1,15 @@
+{
+  "selected_threshold": 0.85,
+  "selection_rule": "max f1_macro; if tie choose higher threshold",
+  "f1_macro": 0.8872049133279765,
+  "f1_micro": 0.9295014880952381,
+  "kept_rows": 896,
+  "kept_ratio": 0.448,
+  "threshold_candidates": [
+    0.7,
+    0.75,
+    0.8,
+    0.85
+  ],
+  "input_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\output_dev.csv"
+}

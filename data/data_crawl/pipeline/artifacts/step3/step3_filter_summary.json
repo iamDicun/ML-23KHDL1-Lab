@@ -1,0 +1,25 @@
+{
+  "threshold_reference": 0.85,
+  "step2_input_rows": 17295,
+  "step3_kept_rows": 16309,
+  "step3_removed_rows": 986,
+  "step3_retention_ratio": 0.9429893032668402,
+  "noise_rule_counts": {
+    "rule_full_none": 731,
+    "rule_all_same_pos": 102,
+    "rule_all_same_neg": 0,
+    "rule_text_too_short": 158
+  },
+  "conf_stats_before": {
+    "conf_mean_mean": 0.8868661193023032,
+    "conf_min_mean": 0.7813877074298929
+  },
+  "conf_stats_after": {
+    "conf_mean_mean": 0.8872785077768921,
+    "conf_min_mean": 0.7829850818566436
+  },
+  "relabel_pool_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\step3\\relabel_pool_3k_step3.csv",
+  "relabel_summary_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\step3\\relabel_pool_3k_summary.json",
+  "removed_step2_rows_preserved": 17888,
+  "removed_step3_rows_preserved": 986
+}
