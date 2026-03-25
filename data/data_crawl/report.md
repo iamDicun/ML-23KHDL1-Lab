@@ -272,3 +272,160 @@ Tiêu chí đạt:
 - Q2: `delta_macro_f1 > 0` overall và đa số aspect có `delta_macro_f1 > 0`
 - Q3: `none_overprediction_ratio` tiến gần 1 hơn hoặc không tăng lệch; `none_f1` không đánh đổi bằng tụt mạnh lớp còn lại
 
+## 12. Cập nhật đánh giá mới nhất (trường hợp không có pseudo gốc)
+
+### 12.1. Bối cảnh đánh giá
+
+- Với dữ liệu crawl hiện tại, không có snapshot pseudo gốc theo phiên bản để so sánh before/after.
+- Vì vậy Q2 được chạy theo chế độ **single-system audit** (đánh giá chất lượng tuyệt đối của hệ hiện tại so với nhãn tay), thay vì so baseline-enhanced delta.
+
+Artifacts mới:
+
+- `pipeline/artifacts/evaluation/q1_group_error_summary.csv`
+- `pipeline/artifacts/evaluation/q1_pairwise_group_tests.csv`
+- `pipeline/artifacts/evaluation/q2q3_single_audit_no_pseudo_baseline_q2_aspect_metrics.csv`
+- `pipeline/artifacts/evaluation/q2q3_single_audit_no_pseudo_baseline_q3_none_bias.csv`
+- `pipeline/artifacts/evaluation/q2q3_single_audit_no_pseudo_baseline_q2q3_report.json`
+- `pipeline/artifacts/evaluation/q123_audit_report_no_pseudo_baseline.md`
+- `pipeline/artifacts/evaluation/q123_audit_report_no_pseudo_baseline.json`
+
+### 12.2. Kết quả Q1 (kiểm tra chất lượng chọn mẫu)
+
+Sample error rate theo nhóm:
+
+- fallback: `0.8500`
+- hard: `0.8257`
+- medium: `0.7633`
+- random: `0.7044`
+
+Kiểm định cặp chính:
+
+- hard vs random: `p = 2.0369e-06` (có ý nghĩa)
+- hard vs medium: `p = 9.0628e-04` (có ý nghĩa)
+- fallback vs random: `p = 3.2191e-02` (có ý nghĩa)
+
+Kết luận Q1:
+
+- Cách chọn mẫu hiện tại **đang bắt đúng vùng khó** (hard/fallback khó hơn random).
+
+### 12.3. Kết quả Q2 (chất lượng tuyệt đối hệ hiện tại)
+
+Overall:
+
+- macro F1: `0.7299`
+- micro F1: `0.7564`
+
+Aspect yếu nhất:
+
+- `khách sạn` (macro F1 `0.5723`)
+
+### 12.4. Kết quả Q3 (none-bias)
+
+None overprediction ratio:
+
+- dịch vụ: `1.4977`
+- vệ sinh: `1.4388`
+- vị trí: `1.2315`
+- phòng ốc: `1.1229`
+- đồ ăn thức uống: `0.9634`
+- khách sạn: `0.5468`
+
+Diễn giải:
+
+- Hệ hiện tại còn xu hướng dự đoán `none` nhiều ở một số aspect (đặc biệt dịch vụ/vệ sinh/vị trí).
+
+### 12.5. Kết luận tổng hợp về chiến lược chọn mẫu
+
+- Kết luận: **Partially Yes**.
+- Ý nghĩa:
+  1. Ổn ở mục tiêu chọn mẫu khó (Q1 đạt tốt).
+  2. Chưa ổn hoàn toàn ở chất lượng nhãn dự đoán và bias none (Q2/Q3 vẫn cần cải thiện).
+
+## 13. Hướng merge dữ liệu (không merge với VLSP)
+
+Theo bối cảnh hiện tại, hướng **không merge VLSP** là hợp lý nếu mục tiêu là tối ưu hóa cho domain crawl hiện tại.
+
+### 13.1. Bộ file nên dùng để merge
+
+1. Pseudo sạch để làm xương sống:
+  - `pipeline/artifacts/step3/output_results_filtered_step3.csv`
+
+2. Human-label để tăng chất lượng vùng khó:
+  - `pipeline/artifacts/step4/human_label_v1.csv`
+
+3. (Tuỳ chọn) pool theo dõi cho vòng sau, không đưa thẳng vào train:
+  - `pipeline/artifacts/step3/relabel_pool_3k_step3.csv`
+  - `pipeline/artifacts/step2/output_results_removed_step2.csv`
+  - `pipeline/artifacts/step3/output_results_removed_step3.csv`
+
+### 13.2. Quy tắc merge khuyến nghị
+
+1. Chuẩn hóa schema về cùng bộ cột nhãn 6 aspect.
+2. Gắn cột `source`:
+  - `pseudo_step3_clean`
+  - `human_relabel_pool`
+3. Join theo `review_id` để phát hiện trùng giữa pseudo và human.
+4. Nếu trùng `review_id`, **ưu tiên nhãn human** (override pseudo).
+5. Loại các mẫu human còn thiếu nhãn ở bất kỳ aspect nào trước khi train.
+6. Giữ một bảng audit riêng ghi rõ record nào bị override để truy vết.
+
+### 13.3. Chia train/val nội bộ (không dùng VLSP)
+
+1. Tách validation từ chính tập crawl đã merge (khuyến nghị stratify theo aspect label distribution).
+2. Nếu có metadata khách sạn, ưu tiên split tránh leakage theo `hotel_id` (group-aware split).
+3. Giữ nguyên một holdout nhỏ chỉ gồm mẫu hard/human để theo dõi tiến bộ theo vòng relabel.
+
+## 14. Cách chạy Q2/Q3 theo mode mới
+
+Script `evaluate_q2_q3_model_impact.py` đã hỗ trợ mode single-system audit:
+
+```powershell
+& .\.venv\Scripts\python.exe data/data_crawl/pipeline/scripts/evaluate_q2_q3_model_impact.py --input data/data_crawl/pipeline/artifacts/evaluation/q2q3_enhanced_from_output_results_no_v2.csv --output-prefix q2q3_single_audit_no_pseudo_baseline
+```
+
+Mode này phù hợp khi không có pseudo gốc để so baseline-enhanced.
+
+## 15. Kết quả merge cuối cùng (crawl-only) và chia train/val/test = 7/2/1
+
+Đã chạy merge thực tế theo hướng không dùng VLSP bằng script:
+
+- `pipeline/scripts/step5_merge_crawl_only_dataset.py`
+
+Nguồn merge:
+
+1. Pseudo sạch: `pipeline/artifacts/step3/output_results_filtered_step3.csv`
+2. Human-label: `pipeline/artifacts/step4/human_label_v1.csv`
+
+Quy tắc áp dụng:
+
+1. Giữ toàn bộ pseudo sạch làm xương sống.
+2. Nếu `review_id` trùng với human-label thì override nhãn bằng human (`human_override`).
+3. Nếu `review_id` chỉ có ở human-label thì thêm mới vào tập cuối (`human_only`).
+
+File đầu ra hoàn chỉnh:
+
+- `pipeline/artifacts/final/crawl_only_merged_full.csv`
+
+File chia tập:
+
+- `pipeline/artifacts/final/crawl_only_train.csv`
+- `pipeline/artifacts/final/crawl_only_val.csv`
+- `pipeline/artifacts/final/crawl_only_test.csv`
+
+Summary:
+
+- `pipeline/artifacts/final/crawl_only_merge_summary.json`
+
+Số lượng sau merge:
+
+- Full: `19120`
+- Train: `13384` (0.7)
+- Val: `3824` (0.2)
+- Test: `1912` (0.1)
+
+Thành phần nguồn nhãn trong full:
+
+- `pseudo_step3_clean`: `16120`
+- `human_only`: `2811`
+- `human_override`: `189`
+

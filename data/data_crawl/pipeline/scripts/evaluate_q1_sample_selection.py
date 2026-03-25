@@ -13,7 +13,7 @@ PIPELINE_DIR = SCRIPT_DIR.parent
 STEP4_DIR = PIPELINE_DIR / "artifacts" / "step4"
 EVAL_DIR = PIPELINE_DIR / "artifacts" / "evaluation"
 
-INPUT_HUMAN_FILE = STEP4_DIR / "relabel_pool_3k_human_independent_text.csv"
+INPUT_HUMAN_FILE = STEP4_DIR / "human_label_v1.csv"
 INPUT_REFERENCE_FILE = STEP4_DIR / "relabel_pool_3k_eval_reference.csv"
 GROUP_SUMMARY_OUT = EVAL_DIR / "q1_group_error_summary.csv"
 PAIRWISE_TEST_OUT = EVAL_DIR / "q1_pairwise_group_tests.csv"

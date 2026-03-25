@@ -1,0 +1,44 @@
+{
+  "date": "2026-03-25",
+  "mode": "no_original_pseudo_baseline",
+  "inputs": {
+    "q2q3_input": "data/data_crawl/pipeline/artifacts/evaluation/q2q3_enhanced_from_output_results_no_v2.csv"
+  },
+  "q1": {
+    "sample_error_rate": {
+      "fallback": 0.85,
+      "hard": 0.8257142857142857,
+      "medium": 0.7632508833922261,
+      "random": 0.7043795620437956
+    },
+    "key_tests": {
+      "hard_vs_random_p_value": 2.03693288084934e-06,
+      "hard_vs_medium_p_value": 0.0009062814950835631,
+      "fallback_vs_random_p_value": 0.03219073983048485
+    }
+  },
+  "q2": {
+    "overall": {
+      "macro_f1": 0.7298796013385003,
+      "micro_f1": 0.7563888888888889
+    },
+    "weakest_aspect_macro_f1": {
+      "aspect": "khách sạn",
+      "value": 0.572259789453286
+    }
+  },
+  "q3": {
+    "none_overprediction_ratio": {
+      "dịch vụ": 1.4977334542157752,
+      "vệ sinh": 1.4388379204892967,
+      "vị trí": 1.2314990512333965,
+      "phòng ốc": 1.1228851291184327,
+      "đồ ăn thức uống": 0.9634353741496599,
+      "khách sạn": 0.5468009478672986
+    }
+  },
+  "decision": {
+    "sample_selection_ok": "partially_yes",
+    "reason": "Selection targets difficult samples effectively, but model quality and none-bias still need improvement before considering the pipeline stable."
+  }
+}

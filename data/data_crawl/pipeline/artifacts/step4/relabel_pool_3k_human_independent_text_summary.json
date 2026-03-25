@@ -1,0 +1,117 @@
+{
+  "input": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\step4\\relabel_pool_3k_human_template_minimal.csv",
+  "output": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\step4\\relabel_pool_3k_human_independent_text.csv",
+  "rows": 3000,
+  "total_rows": 3000,
+  "done": true,
+  "method": "LLM API contextual labeling",
+  "model": "models/gemini-2.5-flash-lite",
+  "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+  "failures": [
+    {
+      "review_id": "976097850",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "1058620010",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "1049230894",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "601500437",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "689812832",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "521578",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "255380371",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "177004338",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "1069818053",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "931336138",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "1066206309",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "981246978",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "956183829",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "1058761842",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "920681806",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "957272920",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "168668562",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "1034660668",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "760331005",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "1010998248",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "1005699395",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "119945017",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "248385059",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "917664562",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "1061654711",
+      "error": "LLM batch call failed: Extra data: line 2 column 1 (char 3070)"
+    },
+    {
+      "review_id": "1004186456",
+      "error": "Missing review_id in batch response; defaulted to 0"
+    }
+  ],
+  "failure_count": 26
+}

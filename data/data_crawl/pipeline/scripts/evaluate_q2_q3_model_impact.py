@@ -26,12 +26,25 @@ ASPECT_NAME_MAP = {
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Evaluate Q2/Q3 by comparing baseline vs enhanced predictions against ground truth. "
-            "Input files must include review_id and per-aspect *_true and *_pred columns."
+            "Evaluate Q2/Q3 using files that include review_id and per-aspect *_true/*_pred columns. "
+            "Supports single-system audit mode and baseline-vs-enhanced comparison mode."
         )
     )
-    parser.add_argument("--baseline", required=True, help="Path to baseline prediction CSV")
-    parser.add_argument("--enhanced", required=True, help="Path to enhanced prediction CSV")
+
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--input",
+        help="Path to single-system prediction CSV (audit mode)",
+    )
+    mode.add_argument(
+        "--baseline",
+        help="Path to baseline prediction CSV (comparison mode; requires --enhanced)",
+    )
+
+    parser.add_argument(
+        "--enhanced",
+        help="Path to enhanced prediction CSV (comparison mode; requires --baseline)",
+    )
     parser.add_argument("--output-prefix", default="q2q3", help="Output file prefix")
     return parser.parse_args()
 
@@ -133,6 +146,45 @@ def main() -> None:
     args = _parse_args()
     EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
+    if args.input:
+        raw = pd.read_csv(args.input)
+        _validate_schema(raw, "input")
+
+        df, aspects = _prepare(raw)
+        flat = _flatten_metrics(df, aspects)
+        aspect_tbl = _aspect_metrics(df, aspects)
+        none_tbl = _none_bias_table(df, aspects)
+
+        prefix = args.output_prefix
+        aspect_out = EVAL_DIR / f"{prefix}_q2_aspect_metrics.csv"
+        none_out = EVAL_DIR / f"{prefix}_q3_none_bias.csv"
+        report_out = EVAL_DIR / f"{prefix}_q2q3_report.json"
+
+        aspect_tbl.to_csv(aspect_out, index=False)
+        none_tbl.to_csv(none_out, index=False)
+
+        summary = {
+            "mode": "single_system_audit",
+            "input_file": str(Path(args.input).resolve()),
+            "reviews_used": int(len(df)),
+            "q2_overall": {
+                "macro_f1": flat["macro_f1"],
+                "micro_f1": flat["micro_f1"],
+            },
+            "q2_aspect_table": str(aspect_out),
+            "q3_none_bias_table": str(none_out),
+        }
+
+        with report_out.open("w", encoding="utf-8") as f:
+            json.dump(summary, f, ensure_ascii=False, indent=2)
+
+        print("Q2/Q3 evaluation completed (single-system audit mode)")
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return
+
+    if not args.baseline or not args.enhanced:
+        raise ValueError("Comparison mode requires both --baseline and --enhanced")
+
     base_raw = pd.read_csv(args.baseline)
     enh_raw = pd.read_csv(args.enhanced)
     _validate_schema(base_raw, "baseline")
@@ -174,6 +226,7 @@ def main() -> None:
     none_cmp.to_csv(none_out, index=False)
 
     summary = {
+        "mode": "baseline_vs_enhanced",
         "baseline_file": str(Path(args.baseline).resolve()),
         "enhanced_file": str(Path(args.enhanced).resolve()),
         "common_reviews_used": int(len(common_ids)),
@@ -192,7 +245,7 @@ def main() -> None:
     with report_out.open("w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
-    print("Q2/Q3 evaluation completed")
+    print("Q2/Q3 evaluation completed (baseline-vs-enhanced mode)")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 

@@ -1,0 +1,28 @@
+{
+  "input_pseudo": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\step3\\output_results_filtered_step3.csv",
+  "input_human": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\step4\\human_label_v1.csv",
+  "output_full": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\final\\crawl_only_merged_full.csv",
+  "output_train": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\final\\crawl_only_train.csv",
+  "output_val": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\final\\crawl_only_val.csv",
+  "output_test": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\final\\crawl_only_test.csv",
+  "rows_full": 19120,
+  "rows_train": 13384,
+  "rows_val": 3824,
+  "rows_test": 1912,
+  "ratios": {
+    "train": 0.7,
+    "val": 0.2,
+    "test": 0.1
+  },
+  "final_columns": [
+    "review_id",
+    "Review",
+    "rating",
+    "vệ sinh_label",
+    "đồ ăn thức uống_label",
+    "khách sạn_label",
+    "vị trí_label",
+    "phòng ốc_label",
+    "dịch vụ_label"
+  ]
+}

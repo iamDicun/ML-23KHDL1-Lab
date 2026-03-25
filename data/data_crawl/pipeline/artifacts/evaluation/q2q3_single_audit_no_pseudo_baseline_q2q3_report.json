@@ -1,0 +1,11 @@
+{
+  "mode": "single_system_audit",
+  "input_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\evaluation\\q2q3_enhanced_from_output_results_no_v2.csv",
+  "reviews_used": 3000,
+  "q2_overall": {
+    "macro_f1": 0.7298796013385003,
+    "micro_f1": 0.7563888888888889
+  },
+  "q2_aspect_table": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\evaluation\\q2q3_single_audit_no_pseudo_baseline_q2_aspect_metrics.csv",
+  "q3_none_bias_table": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\evaluation\\q2q3_single_audit_no_pseudo_baseline_q3_none_bias.csv"
+}
