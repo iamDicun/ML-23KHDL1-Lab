@@ -1,18 +1,85 @@
-import { CongDanModel, HoSoCongDanModel } from '../models/congDanModel.js'
+import { HoSoCongDanModel } from '../models/congDanModel.js'
+import { UserDbModel } from '../models/userDbModel.js'
+import { hashPassword, verifyPassword } from '../utils/password.js'
 
 // In-memory OTP store (sẽ thay bằng Redis/DB sau)
 const otpStore = new Map()
 
 export const CongDanService = {
-  // Gửi OTP đăng nhập
-  guiOtp: async (sdt) => {
+  dangKyTaiKhoan: async ({ sdt, matKhau, hoTen, email }) => {
     if (!sdt || !/^[0-9]{10,11}$/.test(sdt)) {
       const err = new Error('Số điện thoại không hợp lệ'); err.statusCode = 400; throw err
     }
+    if (!matKhau || matKhau.length < 6) {
+      const err = new Error('Mật khẩu phải có ít nhất 6 ký tự'); err.statusCode = 400; throw err
+    }
+    if (!hoTen) {
+      const err = new Error('Họ tên là bắt buộc'); err.statusCode = 400; throw err
+    }
+
+    const isPhoneExists = await UserDbModel.existsByPhone(sdt)
+    if (isPhoneExists) {
+      const err = new Error('Số điện thoại đã được sử dụng'); err.statusCode = 409; throw err
+    }
+
+    let username = `citizen_${sdt}`
+    let suffix = 1
+    while (await UserDbModel.existsByUsername(username)) {
+      username = `citizen_${sdt}_${suffix++}`
+    }
+
+    const passwordHash = await hashPassword(matKhau)
+    const created = await UserDbModel.createCitizen({
+      username,
+      passwordHash,
+      fullName: hoTen,
+      email: email || null,
+      phone: sdt
+    })
+
+    return {
+      message: 'Đăng ký tài khoản thành công',
+      congDan: {
+        id: created.id,
+        sdt: created.phone,
+        hoTen: created.fullName,
+        email: created.email,
+        createdAt: created.createdAt
+      }
+    }
+  },
+
+  // Nhập SĐT + mật khẩu để yêu cầu OTP đăng nhập
+  yeuCauOtpDangNhap: async (sdt, matKhau) => {
+    if (!sdt || !/^[0-9]{10,11}$/.test(sdt)) {
+      const err = new Error('Số điện thoại không hợp lệ'); err.statusCode = 400; throw err
+    }
+    if (!matKhau) {
+      const err = new Error('Mật khẩu là bắt buộc'); err.statusCode = 400; throw err
+    }
+
+    const congDan = await UserDbModel.findCitizenByPhone(sdt)
+    if (!congDan) {
+      const err = new Error('Không tìm thấy tài khoản công dân theo số điện thoại'); err.statusCode = 404; throw err
+    }
+
+    const isPasswordValid = await verifyPassword(matKhau, congDan.passwordHash)
+    if (!isPasswordValid) {
+      const err = new Error('Mật khẩu không chính xác'); err.statusCode = 401; throw err
+    }
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString()
-    otpStore.set(sdt, { otp, expires: Date.now() + 5 * 60 * 1000 })
+    otpStore.set(sdt, {
+      otp,
+      userId: congDan.id,
+      expires: Date.now() + 5 * 60 * 1000
+    })
     console.log(`[OTP] SĐT: ${sdt} | OTP: ${otp}`) // TODO: gửi SMS thật
-    return { message: 'Mã OTP đã được gửi', expires_in: 300 }
+
+    return {
+      message: 'Mã OTP đã được gửi',
+      expires_in: 300
+    }
   },
 
   // Xác nhận OTP + đăng nhập
@@ -30,11 +97,24 @@ export const CongDanService = {
     }
     otpStore.delete(sdt)
 
-    let congDan = await CongDanModel.findBySdt(sdt)
-    if (!congDan) {
-      congDan = await CongDanModel.create({ sdt, hoTen: '', cccd: '', email: '' })
+    const congDanUser = await UserDbModel.findById(record.userId)
+    if (!congDanUser || congDanUser.role !== 'citizen') {
+      const err = new Error('Tài khoản công dân không hợp lệ'); err.statusCode = 401; throw err
     }
-    return { message: 'Đăng nhập thành công', congDan }
+
+    const congDan = {
+      id: congDanUser.id,
+      sdt: congDanUser.phone,
+      hoTen: congDanUser.fullName,
+      cccd: '',
+      email: congDanUser.email,
+      createdAt: congDanUser.createdAt
+    }
+
+    return {
+      message: 'Đăng nhập thành công',
+      congDan
+    }
   },
 
   // Đăng nhập VNeID (placeholder)

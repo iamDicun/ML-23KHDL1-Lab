@@ -1,19 +1,33 @@
 import { useState } from 'react'
+import { apiClient } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
 
 export default function LoginModal({ isOpen, onClose }) {
+  const { login } = useAuth()
   const [form, setForm] = useState({ username: '', password: '' })
   const [loading, setLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
   if (!isOpen) return null
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+
+    setErrorMessage('')
     setLoading(true)
-    // TODO: call API login
-    setTimeout(() => {
+    try {
+      const data = await apiClient.post('/can-bo/dang-nhap', {
+        taiKhoan: form.username,
+        matKhau: form.password
+      })
+
+      login({ token: data.token, user: data.user })
+      onClose()
+    } catch (error) {
+      setErrorMessage(error.message)
+    } finally {
       setLoading(false)
-      alert('Đăng nhập cán bộ - chưa tích hợp API')
-    }, 800)
+    }
   }
 
   return (
@@ -38,6 +52,11 @@ export default function LoginModal({ isOpen, onClose }) {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 py-6 space-y-4">
+          {errorMessage && (
+            <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {errorMessage}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">
               Tài khoản <span className="text-red-500">*</span>

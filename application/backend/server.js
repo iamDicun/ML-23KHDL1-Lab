@@ -28,7 +28,7 @@ app.get('/', (req, res) => {
 })
 
 // API Key authentication middleware
-app.use(apiKeyAuth)
+//app.use(apiKeyAuth)
 
 // Routes
 app.use('/cong-dan', congDanRoutes)

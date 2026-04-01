@@ -2,9 +2,11 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { navLinks } from '../data/mockData'
 import LoginModal from './LoginModal'
+import { useAuth } from '../context/AuthContext'
 
 export default function Navbar() {
   const navigate = useNavigate()
+  const { user, isAuthenticated, logout } = useAuth()
   const [loginDropdownOpen, setLoginDropdownOpen] = useState(false)
   const [officialModalOpen, setOfficialModalOpen] = useState(false)
   const dropdownRef = useRef(null)
@@ -61,36 +63,54 @@ export default function Navbar() {
 
           {/* Auth buttons */}
           <div className="flex items-center gap-3">
-            <button className="px-5 py-2 border-2 border-[#8B2500] text-[#8B2500] font-semibold text-sm rounded hover:bg-[#8B2500] hover:text-white transition-colors">
-              Đăng ký
-            </button>
-            <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setLoginDropdownOpen(!loginDropdownOpen)}
-                className="flex items-center gap-2 px-5 py-2 bg-[#C0392B] text-white font-semibold text-sm rounded hover:bg-[#8B2500] transition-colors"
-              >
-                Đăng nhập
-                <svg className={`w-4 h-4 transition-transform ${loginDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {loginDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded shadow-lg z-50">
+            {!isAuthenticated && (
+              <>
+                <button className="px-5 py-2 border-2 border-[#8B2500] text-[#8B2500] font-semibold text-sm rounded hover:bg-[#8B2500] hover:text-white transition-colors">
+                  Đăng ký
+                </button>
+                <div className="relative" ref={dropdownRef}>
                   <button
-                    onClick={handleCitizenLogin}
-                    className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-[#FDF0E8] hover:text-[#8B2500] font-medium transition-colors border-b border-gray-100"
+                    onClick={() => setLoginDropdownOpen(!loginDropdownOpen)}
+                    className="flex items-center gap-2 px-5 py-2 bg-[#C0392B] text-white font-semibold text-sm rounded hover:bg-[#8B2500] transition-colors"
                   >
-                    👤 Công dân
+                    Đăng nhập
+                    <svg className={`w-4 h-4 transition-transform ${loginDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </button>
-                  <button
-                    onClick={handleOfficialLogin}
-                    className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-[#FDF0E8] hover:text-[#8B2500] font-medium transition-colors"
-                  >
-                    🏢 Cán bộ
-                  </button>
+                  {loginDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded shadow-lg z-50">
+                      <button
+                        onClick={handleCitizenLogin}
+                        className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-[#FDF0E8] hover:text-[#8B2500] font-medium transition-colors border-b border-gray-100"
+                      >
+                        👤 Công dân
+                      </button>
+                      <button
+                        onClick={handleOfficialLogin}
+                        className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-[#FDF0E8] hover:text-[#8B2500] font-medium transition-colors"
+                      >
+                        🏢 Cán bộ
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
+            {isAuthenticated && (
+              <div className="flex items-center gap-2">
+                <div className="text-sm text-right leading-tight">
+                  <div className="font-semibold text-[#8B2500]">{user?.fullName || user?.username || user?.phone || 'Người dùng'}</div>
+                  <div className="text-xs text-gray-500">{user?.role === 'official' ? 'Cán bộ' : 'Công dân'}</div>
+                </div>
+                <button
+                  onClick={logout}
+                  className="px-4 py-2 border border-[#8B2500] text-[#8B2500] font-semibold text-sm rounded hover:bg-[#8B2500] hover:text-white transition-colors"
+                >
+                  Đăng xuất
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>

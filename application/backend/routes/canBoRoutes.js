@@ -1,10 +1,13 @@
 import express from 'express'
 import { CanBoController } from '../controllers/canBoController.js'
+import { jwtAuth, requireRole } from '../middlewares/jwtAuth.js'
 
 const router = express.Router()
 
 // Auth
 router.post('/dang-nhap', CanBoController.dangNhap)
+
+router.use(jwtAuth, requireRole('official'))
 
 // Quản lý hồ sơ
 router.get('/ho-so', CanBoController.getDanhSachHoSo)

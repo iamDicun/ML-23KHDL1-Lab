@@ -1,5 +1,7 @@
 import { CanBoModel } from '../models/canBoModel.js'
 import { HoSoCongDanModel } from '../models/congDanModel.js'
+import { UserDbModel } from '../models/userDbModel.js'
+import { verifyPassword } from '../utils/password.js'
 
 export const CanBoService = {
   // Đăng nhập cán bộ
@@ -7,11 +9,22 @@ export const CanBoService = {
     if (!taiKhoan || !matKhau) {
       const err = new Error('Tài khoản và mật khẩu là bắt buộc'); err.statusCode = 400; throw err
     }
-    const canBo = await CanBoModel.findByTaiKhoan(taiKhoan)
-    if (!canBo || canBo.matKhau !== matKhau) {
+
+    const canBoUser = await UserDbModel.findOfficialByUsername(taiKhoan)
+    const isPasswordValid = await verifyPassword(matKhau, canBoUser?.passwordHash)
+    if (!canBoUser || !isPasswordValid) {
       const err = new Error('Tài khoản hoặc mật khẩu không đúng'); err.statusCode = 401; throw err
     }
-    const { matKhau: _, ...info } = canBo
+
+    const info = {
+      id: canBoUser.id,
+      taiKhoan: canBoUser.username,
+      hoTen: canBoUser.fullName,
+      donVi: 'Chưa cập nhật',
+      chucVu: 'Chưa cập nhật',
+      createdAt: canBoUser.createdAt
+    }
+
     return { message: 'Đăng nhập thành công', canBo: info }
   },
 

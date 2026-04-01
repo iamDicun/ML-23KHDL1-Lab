@@ -1,33 +1,51 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { apiClient } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
 
 const TAB = { PHONE: 'phone', VNEID: 'vneid' }
 
 export default function CitizenLoginPage() {
   const navigate = useNavigate()
+  const { login } = useAuth()
   const [activeTab, setActiveTab] = useState(TAB.PHONE)
   const [phone, setPhone] = useState('')
+  const [password, setPassword] = useState('')
   const [otp, setOtp] = useState('')
   const [otpSent, setOtpSent] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
-  const handleSendOtp = (e) => {
+  const handleSendOtp = async (e) => {
     e.preventDefault()
-    if (!phone) return
+    if (!phone || !password) return
+
+    setErrorMessage('')
     setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
+    try {
+      await apiClient.post('/cong-dan/dang-nhap/yeu-cau-otp', { sdt: phone, matKhau: password })
       setOtpSent(true)
-    }, 800)
+    } catch (error) {
+      setErrorMessage(error.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handlePhoneLogin = (e) => {
+  const handlePhoneLogin = async (e) => {
     e.preventDefault()
+
+    setErrorMessage('')
     setLoading(true)
-    setTimeout(() => {
+    try {
+      const data = await apiClient.post('/cong-dan/dang-nhap/xac-nhan-otp', { sdt: phone, otp })
+      login({ token: data.token, user: data.user })
+      navigate('/')
+    } catch (error) {
+      setErrorMessage(error.message)
+    } finally {
       setLoading(false)
-      alert('Đăng nhập SĐT - chưa tích hợp API')
-    }, 800)
+    }
   }
 
   const handleVneIdLogin = () => {
@@ -101,6 +119,11 @@ export default function CitizenLoginPage() {
 
           {/* Tab content */}
           <div className="px-6 py-6">
+            {errorMessage && (
+              <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {errorMessage}
+              </div>
+            )}
 
             {/* Phone tab */}
             {activeTab === TAB.PHONE && (
@@ -132,6 +155,22 @@ export default function CitizenLoginPage() {
                   </div>
                 </div>
 
+                {!otpSent && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">
+                      Mật khẩu <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Nhập mật khẩu"
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#8B2500] transition-colors"
+                      required
+                    />
+                  </div>
+                )}
+
                 {otpSent && (
                   <>
                     <div>
@@ -151,7 +190,7 @@ export default function CitizenLoginPage() {
                         OTP đã được gửi đến <span className="font-semibold">{phone}</span>.{' '}
                         <button
                           type="button"
-                          onClick={() => { setOtpSent(false); setOtp('') }}
+                          onClick={() => { setOtpSent(false); setOtp(''); setPassword('') }}
                           className="text-[#8B2500] hover:underline"
                         >
                           Đổi số?

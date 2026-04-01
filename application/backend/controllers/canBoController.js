@@ -1,4 +1,5 @@
 import { CanBoService } from '../services/canBoService.js'
+import { signAccessToken } from '../utils/jwt.js'
 
 export const CanBoController = {
   // POST /can-bo/dang-nhap
@@ -6,7 +7,28 @@ export const CanBoController = {
     try {
       const { taiKhoan, matKhau } = req.body
       const result = await CanBoService.dangNhap(taiKhoan, matKhau)
-      res.json(result)
+      const token = signAccessToken({
+        sub: String(result.canBo.id),
+        role: 'official',
+        userType: 'can-bo',
+        userId: result.canBo.id,
+        fullName: result.canBo.hoTen,
+        username: result.canBo.taiKhoan
+      })
+
+      res.json({
+        ...result,
+        token,
+        user: {
+          id: result.canBo.id,
+          role: 'official',
+          userType: 'can-bo',
+          fullName: result.canBo.hoTen,
+          username: result.canBo.taiKhoan,
+          donVi: result.canBo.donVi,
+          chucVu: result.canBo.chucVu
+        }
+      })
     } catch (err) { next(err) }
   },
 
@@ -23,8 +45,8 @@ export const CanBoController = {
   xuLyHoSo: async (req, res, next) => {
     try {
       const { id } = req.params
-      const { canBoId, trangThai, ghiChu } = req.body
-      const result = await CanBoService.xuLyHoSo(id, canBoId, trangThai, ghiChu)
+      const { trangThai, ghiChu } = req.body
+      const result = await CanBoService.xuLyHoSo(id, Number(req.user.userId), trangThai, ghiChu)
       res.json(result)
     } catch (err) { next(err) }
   },

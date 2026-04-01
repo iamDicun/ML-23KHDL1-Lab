@@ -14,16 +14,26 @@ npm install
 cp .env.example .env
 \`\`\`
 
-3. Edit \`.env\` and add your configuration:
+3. Edit `.env` and add your configuration:
 \`\`\`
 PORT=5000
 NODE_ENV=development
 API_KEY=my_secret_api_key_123
-SUPABASE_URL=your_supabase_url
-SUPABASE_SERVICE_KEY=your_supabase_service_role_key
+JWT_SECRET=replace_with_a_long_random_secret
+JWT_EXPIRES_IN=7d
+DATABASE_URL=postgresql://postgres:your_password@your-project-ref.supabase.co:5432/postgres
+DB_HOST=your-project-ref.supabase.co
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=postgres
+DB_PASSWORD=your_password
 \`\`\`
 
-4. Start the server:
+4. Initialize database schema:
+  - Open Supabase SQL Editor
+  - Run `sql/init_schema.sql`
+
+5. Start the server:
 \`\`\`bash
 npm run dev
 \`\`\`
@@ -68,6 +78,13 @@ Response ← Controller ← Service ← Model ← Database
 ## API Endpoints
 
 **Authentication**: Tất cả endpoints (trừ `GET /`) yêu cầu API key trong header `x-api-key`
+
+### Citizen auth flow (2 bước)
+- `POST /cong-dan/dang-nhap/yeu-cau-otp`
+  - Body: `{ "sdt": "0901234567", "matKhau": "hashed_pw_2" }`
+- `POST /cong-dan/dang-nhap/xac-nhan-otp`
+  - Body: `{ "sdt": "0901234567", "otp": "123456" }`
+- Response bước 2 trả về `token` (JWT) và `user` để frontend lưu context.
 
 ### GET /
 Health check endpoint (không cần auth)
@@ -129,6 +146,7 @@ Delete a user
 
 - Express.js - Web framework
 - MVC Pattern - Clean architecture
+- PostgreSQL (`pg`) - Database connection
 - CORS - Cross-origin resource sharing
 - dotenv - Environment variables
 
