@@ -25,7 +25,7 @@ BASE_URL_ENV = "LLM_BASE_URL"
 MODEL_ENV = "LLM_MODEL"
 
 # ĐIỀN GIÁ TRỊ THỰC TẾ VÀO ĐÂY (Đây là giá trị mặc định nếu không tìm thấy biến môi trường)
-DEFAULT_API_KEY = "[REDACTED_API_KEY]" # Key của bạn
+DEFAULT_API_KEY = "" # Key của bạn
 DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai" 
 DEFAULT_MODEL = "models/gemini-2.5-flash-lite"
 
