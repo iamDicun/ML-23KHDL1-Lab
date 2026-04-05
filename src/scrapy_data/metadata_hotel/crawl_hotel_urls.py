@@ -11,6 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import json
+import os
 import time
 import re
 
@@ -414,7 +415,9 @@ def crawl_hotel_urls(resume_from_checkpoint=False):
     print("=" * 60)
     print("AGODA HOTEL URL CRAWLER - ĐÀ NẴNG")
     print("=" * 60)
-    
+
+    os.makedirs(os.path.dirname(os.path.abspath(HOTEL_URLS_FILE)), exist_ok=True)
+
     # Initialize checkpoint manager
     checkpoint = CheckpointManager(HOTEL_URLS_FILE)
     checkpoint.start_time = time.time()

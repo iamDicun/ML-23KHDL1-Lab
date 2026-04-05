@@ -19,8 +19,9 @@ from urllib.parse import urlparse
 from config import (
     get_chrome_options,
     REVIEW_SELECTORS,
+    REVIEWS_CHECKPOINT_DIR,
     REVIEWS_OUTPUT_FILE,
-    PAGE_LOAD_DELAY
+    PAGE_LOAD_DELAY,
 )
 
 
@@ -73,7 +74,7 @@ class AgodaReviewCrawler:
     """
     Crawler class for extracting reviews from hotel pages.
     """
-    CHECKPOINT_DIR = "reviews_raw"
+    CHECKPOINT_DIR = REVIEWS_CHECKPOINT_DIR
     def __init__(self) -> None:
         logger.info("Initializing Chrome WebDriver...")
         self.driver: WebDriver = webdriver.Chrome(
@@ -567,7 +568,9 @@ class AgodaReviewCrawler:
         return hotel_reviews
     
     # Save final reviews for a hotel (CSV + JSON) and clear checkpoint
-    def save_hotel_reviews(self, reviews: list[dict], hotel_id: str, output_dir: str = "reviews_raw") -> None:
+    def save_hotel_reviews(
+        self, reviews: list[dict], hotel_id: str, output_dir: str = REVIEWS_CHECKPOINT_DIR
+    ) -> None:
         os.makedirs(output_dir, exist_ok=True)
         
         # Save CSV
@@ -591,7 +594,7 @@ class AgodaReviewCrawler:
 
 
 # Get set of hotel IDs already crawled by checking existing files in output folder
-def get_crawled_hotel_ids(output_dir: str = "reviews_raw") -> set[str]:
+def get_crawled_hotel_ids(output_dir: str = REVIEWS_CHECKPOINT_DIR) -> set[str]:
     crawled_ids = set()
     if os.path.exists(output_dir):
         # Iterate over all files in the output directory
@@ -604,7 +607,9 @@ def get_crawled_hotel_ids(output_dir: str = "reviews_raw") -> set[str]:
 
 
 # Merge all per-hotel CSV files into one final CSV
-def merge_all_reviews(output_dir: str = "reviews_raw", output_file: str = REVIEWS_OUTPUT_FILE) -> Optional[list[dict]]:
+def merge_all_reviews(
+    output_dir: str = REVIEWS_CHECKPOINT_DIR, output_file: str = REVIEWS_OUTPUT_FILE
+) -> Optional[list[dict]]:
     all_reviews = []
     failed_files = []
     
@@ -634,6 +639,7 @@ def merge_all_reviews(output_dir: str = "reviews_raw", output_file: str = REVIEW
     
     # Write all reviews to the output file
     if all_reviews:
+        os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
         fieldnames = ["review_id", "hotel_id", "review_text", "rating"]
         with open(output_file, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)

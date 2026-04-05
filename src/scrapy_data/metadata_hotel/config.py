@@ -1,10 +1,19 @@
 import random
 
 # =============================================================================
-# OUTPUT SETTINGS
+# OUTPUT SETTINGS (anchored to repo root via ../paths.py)
 # =============================================================================
-HOTEL_URLS_FILE = "hotel_urls.json"
-REVIEWS_OUTPUT_FILE = "reviews_output.csv"
+import sys
+from pathlib import Path
+
+_SCRAPY_ROOT = Path(__file__).resolve().parent.parent
+if str(_SCRAPY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SCRAPY_ROOT))
+
+from paths import HOTEL_URLS_JSON
+
+# JSON is the canonical output from crawl_hotel_urls.py (CSV is written next to it).
+HOTEL_URLS_FILE = HOTEL_URLS_JSON
 
 # =============================================================================
 # DELAY SETTINGS (Anti-bot)

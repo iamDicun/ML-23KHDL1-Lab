@@ -1,12 +1,25 @@
 import random
 
 # =============================================================================
-# OUTPUT SETTINGS
+# OUTPUT SETTINGS (anchored to repo root via ../paths.py)
 # =============================================================================
+import sys
+from pathlib import Path
+
+_SCRAPY_ROOT = Path(__file__).resolve().parent.parent
+if str(_SCRAPY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SCRAPY_ROOT))
+
 import os
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-HOTEL_URLS_FILE = os.path.join(_BASE_DIR, "..", "processed_data", "hotel_urls.csv")
-REVIEWS_OUTPUT_FILE = "reviews_output.csv"
+
+from paths import HOTEL_URLS_CSV_CLEANED, HOTEL_URLS_CSV_RAW, REVIEWS_OUTPUT_CSV, REVIEWS_RAW_DIR
+
+# Prefer filtered list from EDA; otherwise URLs from metadata crawl (raw CSV).
+HOTEL_URLS_FILE = (
+    HOTEL_URLS_CSV_CLEANED if os.path.isfile(HOTEL_URLS_CSV_CLEANED) else HOTEL_URLS_CSV_RAW
+)
+REVIEWS_OUTPUT_FILE = REVIEWS_OUTPUT_CSV
+REVIEWS_CHECKPOINT_DIR = REVIEWS_RAW_DIR
 
 # =============================================================================
 # DELAY SETTINGS (Anti-bot)
