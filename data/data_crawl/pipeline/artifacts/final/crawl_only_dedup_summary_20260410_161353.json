@@ -1,0 +1,12 @@
+{
+  "timestamp": "20260410_161353",
+  "method": "drop duplicated normalized Review (strip+lower+collapse whitespace), keep first",
+  "rows_before": 19120,
+  "duplicate_rows_removed": 229,
+  "rows_after": 18891,
+  "overlap_train_val": 0,
+  "overlap_train_test": 0,
+  "overlap_val_test": 0,
+  "backup_dir": "c:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\final\\backup_before_dedup_20260410_161353",
+  "random_seed": 42
+}
