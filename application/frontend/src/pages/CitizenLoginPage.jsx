@@ -11,34 +11,17 @@ export default function CitizenLoginPage() {
   const [activeTab, setActiveTab] = useState(TAB.PHONE)
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
-  const [otp, setOtp] = useState('')
-  const [otpSent, setOtpSent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
-  const handleSendOtp = async (e) => {
+  const handlePhoneLogin = async (e) => {
     e.preventDefault()
     if (!phone || !password) return
 
     setErrorMessage('')
     setLoading(true)
     try {
-      await apiClient.post('/cong-dan/dang-nhap/yeu-cau-otp', { sdt: phone, matKhau: password })
-      setOtpSent(true)
-    } catch (error) {
-      setErrorMessage(error.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handlePhoneLogin = async (e) => {
-    e.preventDefault()
-
-    setErrorMessage('')
-    setLoading(true)
-    try {
-      const data = await apiClient.post('/cong-dan/dang-nhap/xac-nhan-otp', { sdt: phone, otp })
+      const data = await apiClient.post('/cong-dan/dang-nhap', { sdt: phone, matKhau: password })
       login({ token: data.token, user: data.user })
       navigate('/')
     } catch (error) {
@@ -127,91 +110,43 @@ export default function CitizenLoginPage() {
 
             {/* Phone tab */}
             {activeTab === TAB.PHONE && (
-              <form onSubmit={otpSent ? handlePhoneLogin : handleSendOtp} className="space-y-4">
+              <form onSubmit={handlePhoneLogin} className="space-y-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">
                     Số điện thoại <span className="text-red-500">*</span>
                   </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="Nhập số điện thoại"
-                      pattern="[0-9]{10,11}"
-                      className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#8B2500] transition-colors"
-                      required
-                      readOnly={otpSent}
-                    />
-                    {!otpSent && (
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="px-4 py-2 bg-[#8B2500] text-white text-sm font-semibold rounded hover:bg-[#6B1A00] transition-colors disabled:opacity-60 whitespace-nowrap"
-                      >
-                        {loading ? '...' : 'Gửi OTP'}
-                      </button>
-                    )}
-                  </div>
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="Nhập số điện thoại"
+                    pattern="[0-9]{10,11}"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#8B2500] transition-colors"
+                    required
+                  />
                 </div>
 
-                {!otpSent && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">
-                      Mật khẩu <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Nhập mật khẩu"
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#8B2500] transition-colors"
-                      required
-                    />
-                  </div>
-                )}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Mật khẩu <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Nhập mật khẩu"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#8B2500] transition-colors"
+                    required
+                  />
+                </div>
 
-                {otpSent && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-1">
-                        Mã OTP <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={otp}
-                        onChange={(e) => setOtp(e.target.value)}
-                        placeholder="Nhập mã OTP"
-                        maxLength={6}
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#8B2500] transition-colors tracking-widest text-center font-mono text-lg"
-                        required
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        OTP đã được gửi đến <span className="font-semibold">{phone}</span>.{' '}
-                        <button
-                          type="button"
-                          onClick={() => { setOtpSent(false); setOtp(''); setPassword('') }}
-                          className="text-[#8B2500] hover:underline"
-                        >
-                          Đổi số?
-                        </button>
-                      </p>
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full bg-[#8B2500] text-white font-semibold py-2.5 rounded hover:bg-[#6B1A00] transition-colors disabled:opacity-60"
-                    >
-                      {loading ? 'Đang xác thực...' : 'Xác nhận & Đăng nhập'}
-                    </button>
-                  </>
-                )}
-
-                {!otpSent && (
-                  <p className="text-xs text-gray-500 text-center">
-                    Mã OTP sẽ được gửi qua tin nhắn SMS
-                  </p>
-                )}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-[#8B2500] text-white font-semibold py-2.5 rounded hover:bg-[#6B1A00] transition-colors disabled:opacity-60"
+                >
+                  {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+                </button>
               </form>
             )}
 

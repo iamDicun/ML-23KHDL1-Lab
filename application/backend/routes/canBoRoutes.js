@@ -13,6 +13,9 @@ router.use(jwtAuth, requireRole('official'))
 router.get('/ho-so', CanBoController.getDanhSachHoSo)
 router.put('/ho-so/:id/xu-ly', CanBoController.xuLyHoSo)
 
+// Dashboard quản lý
+router.get('/dashboard', CanBoController.getDashboard)
+
 // Thống kê
 router.get('/thong-ke', CanBoController.getThongKe)
 

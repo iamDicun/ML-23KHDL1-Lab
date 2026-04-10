@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { apiClient } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 
 export default function LoginModal({ isOpen, onClose }) {
+  const navigate = useNavigate()
   const { login } = useAuth()
   const [form, setForm] = useState({ username: '', password: '' })
   const [loading, setLoading] = useState(false)
@@ -23,6 +25,7 @@ export default function LoginModal({ isOpen, onClose }) {
 
       login({ token: data.token, user: data.user })
       onClose()
+      navigate('/can-bo/quan-ly')
     } catch (error) {
       setErrorMessage(error.message)
     } finally {

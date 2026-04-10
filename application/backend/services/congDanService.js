@@ -1,9 +1,6 @@
-import { HoSoCongDanModel } from '../models/congDanModel.js'
+import { CongDanModel, HoSoCongDanModel } from '../models/congDanModel.js'
 import { UserDbModel } from '../models/userDbModel.js'
 import { hashPassword, verifyPassword } from '../utils/password.js'
-
-// In-memory OTP store (sẽ thay bằng Redis/DB sau)
-const otpStore = new Map()
 
 export const CongDanService = {
   dangKyTaiKhoan: async ({ sdt, matKhau, hoTen, email }) => {
@@ -49,8 +46,8 @@ export const CongDanService = {
     }
   },
 
-  // Nhập SĐT + mật khẩu để yêu cầu OTP đăng nhập
-  yeuCauOtpDangNhap: async (sdt, matKhau) => {
+  // Đăng nhập công dân bằng SĐT + mật khẩu
+  dangNhap: async (sdt, matKhau) => {
     if (!sdt || !/^[0-9]{10,11}$/.test(sdt)) {
       const err = new Error('Số điện thoại không hợp lệ'); err.statusCode = 400; throw err
     }
@@ -68,52 +65,16 @@ export const CongDanService = {
       const err = new Error('Mật khẩu không chính xác'); err.statusCode = 401; throw err
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString()
-    otpStore.set(sdt, {
-      otp,
-      userId: congDan.id,
-      expires: Date.now() + 5 * 60 * 1000
-    })
-    console.log(`[OTP] SĐT: ${sdt} | OTP: ${otp}`) // TODO: gửi SMS thật
-
-    return {
-      message: 'Mã OTP đã được gửi',
-      expires_in: 300
-    }
-  },
-
-  // Xác nhận OTP + đăng nhập
-  xacNhanOtp: async (sdt, otp) => {
-    const record = otpStore.get(sdt)
-    if (!record) {
-      const err = new Error('Mã OTP không tồn tại hoặc đã hết hạn'); err.statusCode = 400; throw err
-    }
-    if (Date.now() > record.expires) {
-      otpStore.delete(sdt)
-      const err = new Error('Mã OTP đã hết hạn'); err.statusCode = 400; throw err
-    }
-    if (record.otp !== otp) {
-      const err = new Error('Mã OTP không chính xác'); err.statusCode = 401; throw err
-    }
-    otpStore.delete(sdt)
-
-    const congDanUser = await UserDbModel.findById(record.userId)
-    if (!congDanUser || congDanUser.role !== 'citizen') {
-      const err = new Error('Tài khoản công dân không hợp lệ'); err.statusCode = 401; throw err
-    }
-
-    const congDan = {
-      id: congDanUser.id,
-      sdt: congDanUser.phone,
-      hoTen: congDanUser.fullName,
-      cccd: '',
-      email: congDanUser.email,
-      createdAt: congDanUser.createdAt
-    }
-
     return {
       message: 'Đăng nhập thành công',
-      congDan
+      congDan: {
+        id: congDan.id,
+        sdt: congDan.phone,
+        hoTen: congDan.fullName,
+        cccd: '',
+        email: congDan.email,
+        createdAt: congDan.createdAt
+      }
     }
   },
 

@@ -32,6 +32,18 @@ export default function Navbar() {
     setOfficialModalOpen(true)
   }
 
+  const handleLogout = () => {
+    const currentRole = user?.role
+    logout()
+
+    if (currentRole === 'official') {
+      setOfficialModalOpen(true)
+      return
+    }
+
+    navigate('/dang-nhap/cong-dan')
+  }
+
   return (
     <>
       {/* Top bar */}
@@ -104,7 +116,7 @@ export default function Navbar() {
                   <div className="text-xs text-gray-500">{user?.role === 'official' ? 'Cán bộ' : 'Công dân'}</div>
                 </div>
                 <button
-                  onClick={logout}
+                  onClick={handleLogout}
                   className="px-4 py-2 border border-[#8B2500] text-[#8B2500] font-semibold text-sm rounded hover:bg-[#8B2500] hover:text-white transition-colors"
                 >
                   Đăng xuất

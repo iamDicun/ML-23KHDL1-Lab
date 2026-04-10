@@ -18,7 +18,7 @@ cp .env.example .env
 \`\`\`
 PORT=5000
 NODE_ENV=development
-API_KEY=my_secret_api_key_123
+API_KEY=your_secret_api_key_here
 JWT_SECRET=replace_with_a_long_random_secret
 JWT_EXPIRES_IN=7d
 DATABASE_URL=postgresql://postgres:your_password@your-project-ref.supabase.co:5432/postgres
@@ -54,7 +54,7 @@ backend/
 ├── routes/             # API routes
 │   └── userRoutes.js
 ├── middlewares/        # Custom middlewares
-│   ├── apiKeyAuth.js   # API key authentication
+│   ├── apiKeyAuth.js
 │   └── errorHandler.js
 └── server.js           # Entry point
 \`\`\`
@@ -71,20 +71,21 @@ backend/
 **Request Flow:**
 ```
 Request → API Key Auth → Routes → Controller → Service → Model → Database
-                                  ↓
+                                                ↓
 Response ← Controller ← Service ← Model ← Database
 ```
 
 ## API Endpoints
 
-**Authentication**: Tất cả endpoints (trừ `GET /`) yêu cầu API key trong header `x-api-key`
+**Authentication**:
+- Tất cả endpoint API (trừ `GET /`) yêu cầu header `x-api-key`.
+- Endpoints protected theo JWT + role (cán bộ/công dân).
+- Công dân đăng nhập trực tiếp bằng SĐT + mật khẩu để nhận JWT.
 
-### Citizen auth flow (2 bước)
-- `POST /cong-dan/dang-nhap/yeu-cau-otp`
-  - Body: `{ "sdt": "0901234567", "matKhau": "hashed_pw_2" }`
-- `POST /cong-dan/dang-nhap/xac-nhan-otp`
-  - Body: `{ "sdt": "0901234567", "otp": "123456" }`
-- Response bước 2 trả về `token` (JWT) và `user` để frontend lưu context.
+### Citizen auth flow
+- `POST /cong-dan/dang-nhap`
+  - Body: `{ "sdt": "0901234567", "matKhau": "your_password" }`
+- Response trả về `token` (JWT) và `user` để frontend lưu context.
 
 ### GET /
 Health check endpoint (không cần auth)

@@ -11,6 +11,8 @@ BEGIN;
 -- 1) DROP TABLES (reverse dependency order)
 DROP TABLE IF EXISTS audit_logs CASCADE;
 DROP TABLE IF EXISTS notifications CASCADE;
+DROP TABLE IF EXISTS official_documents CASCADE;
+DROP TABLE IF EXISTS official_daily_tasks CASCADE;
 DROP TABLE IF EXISTS business_insights_summary CASCADE;
 DROP TABLE IF EXISTS ai_score_history CASCADE;
 DROP TABLE IF EXISTS ai_predictions CASCADE;
@@ -133,6 +135,38 @@ CREATE TABLE notifications (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE official_daily_tasks (
+    id SERIAL PRIMARY KEY,
+    official_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    task_title VARCHAR(255) NOT NULL,
+    task_description TEXT,
+    priority VARCHAR(20) NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'done', 'cancelled')),
+    due_date DATE NOT NULL,
+    due_time TIME,
+    source_type VARCHAR(50),
+    source_id INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE official_documents (
+    id SERIAL PRIMARY KEY,
+    category VARCHAR(20) NOT NULL CHECK (category IN ('cong_van', 'nghi_quyet', 'tin_tuc')),
+    title VARCHAR(255) NOT NULL,
+    summary TEXT,
+    document_number VARCHAR(100),
+    issued_by VARCHAR(255),
+    published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    effective_from DATE,
+    effective_to DATE,
+    external_url TEXT,
+    attachment_url TEXT,
+    is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE audit_logs (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -155,6 +189,8 @@ CREATE INDEX idx_registration_requests_status ON registration_requests(status);
 CREATE INDEX idx_customer_reviews_business_id ON customer_reviews(business_id);
 CREATE INDEX idx_ai_score_history_business_id_type_time ON ai_score_history(business_id, score_type, evaluated_at DESC);
 CREATE INDEX idx_notifications_user_id_read ON notifications(user_id, is_read);
+CREATE INDEX idx_official_daily_tasks_user_due_status ON official_daily_tasks(official_user_id, due_date, status);
+CREATE INDEX idx_official_documents_category_published ON official_documents(category, published_at DESC);
 CREATE INDEX idx_audit_logs_user_id_time ON audit_logs(user_id, created_at DESC);
 
 -- 4) TRIGGER: auto-update updated_at
@@ -181,6 +217,16 @@ BEFORE UPDATE ON registration_requests
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
+CREATE TRIGGER trg_official_daily_tasks_set_updated_at
+BEFORE UPDATE ON official_daily_tasks
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_official_documents_set_updated_at
+BEFORE UPDATE ON official_documents
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
 -- 5) MOCK DATA
 INSERT INTO system_configs (criteria_name, threshold_value, action_type, description) VALUES
 ('hygiene_critical_threshold', 0.4, 'trigger_alert_and_draft', 'Nguong diem ve sinh bao dong do'),
@@ -198,6 +244,11 @@ INSERT INTO business_types (name, description) VALUES
 INSERT INTO businesses (owner_id, type_id, name, address, district, latitude, longitude, license_number) VALUES
 (2, 1, 'Khach san Anh Sao', '123 Nguyen Hue', 'Quan 1', 10.7743, 106.7044, 'GP-KS-001'),
 (3, 2, 'Nha hang Bien Goi', '456 Vo Van Tan', 'Quan 3', 10.7769, 106.6918, 'GP-NH-002');
+
+INSERT INTO registration_requests (citizen_id, request_type, data, status, official_note) VALUES
+(2, 1, '{"name":"Khach san Anh Sao Mo Rong","address":"123 Nguyen Hue, Quan 1"}', 'pending', NULL),
+(3, 2, '{"name":"Nha hang Bien Goi 2","address":"89 Hai Ba Trung, Quan 1"}', 'additional_info_required', 'Can bo sung giay to PCCC va hinh anh mat bang.'),
+(2, 1, '{"name":"Khach san Pho Co","address":"17 Le Loi, Quan 1"}', 'approved', 'Da du dieu kien cap phep.');
 
 INSERT INTO customer_reviews (business_id, customer_name, rating_star, comment) VALUES
 (1, 'Khach A', 1, 'Phong rat ban, co mui am moc o goc tuong va ga giuong khong duoc thay moi. Thai do nhan vien cung binh thuong.'),
@@ -218,5 +269,14 @@ INSERT INTO business_insights_summary (business_id, attribute_affected, top_nega
 
 INSERT INTO notifications (user_id, title, message, severity) VALUES
 (1, 'Canh bao khan: Diem ve sinh rot nguong', 'Khach san Anh Sao (Quan 1) co diem Ve sinh 0.25. He thong da tao ban nhap quyet dinh nhac nho.', 'critical');
+
+INSERT INTO official_daily_tasks (official_user_id, task_title, task_description, priority, status, due_date, due_time, source_type, source_id) VALUES
+(1, 'Ra soat ho so cho xu ly', 'Uu tien cac ho so dang cho xu ly va can bo sung trong ngay.', 'high', 'pending', CURRENT_DATE, '09:00', 'registration_request', 1),
+(1, 'Cap nhat ket qua xu ly buoi chieu', 'Tong hop ket qua xu ly de gui bao cao cuoi ngay.', 'medium', 'in_progress', CURRENT_DATE, '15:30', 'manual', NULL);
+
+INSERT INTO official_documents (category, title, summary, document_number, issued_by, published_at, is_pinned, external_url) VALUES
+('cong_van', 'Cong van ve tang cuong kiem tra co so luu tru du lich', 'Yeu cau can bo dia ban ra soat co so co nguy co cao va bao cao dinh ky hang tuan.', 'CV-2026-118/VHTTDL', 'Bo VHTTDL', NOW() - INTERVAL '2 days', TRUE, 'https://example.gov.vn/cong-van-kiem-tra-co-so-luu-tru'),
+('nghi_quyet', 'Nghi quyet ve chuyen doi so trong quan ly co so kinh doanh VHTTDL', 'Tap trung so hoa quy trinh tiep nhan va giam sat ho so trong nam 2026.', 'NQ-2026-03', 'Hoi dong nhan dan TP.HCM', NOW() - INTERVAL '10 days', FALSE, 'https://example.gov.vn/nghi-quyet-chuyen-doi-so-vhttdl'),
+('tin_tuc', 'Ban tin noi bo: huong dan xu ly ho so truc tuyen quy II', 'Cap nhat quy trinh, mau bieu va SLA moi cho cac ho so online.', NULL, 'Trung tam Chuyen doi so VHTTDL', NOW() - INTERVAL '1 day', FALSE, 'https://example.gov.vn/ban-tin-noi-bo-quy-2');
 
 COMMIT;

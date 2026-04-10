@@ -10,29 +10,11 @@ export const CongDanController = {
     } catch (err) { next(err) }
   },
 
-  // POST /cong-dan/dang-nhap/yeu-cau-otp
-  yeuCauOtpDangNhap: async (req, res, next) => {
+  // POST /cong-dan/dang-nhap
+  dangNhap: async (req, res, next) => {
     try {
       const { sdt, matKhau } = req.body
-      const result = await CongDanService.yeuCauOtpDangNhap(sdt, matKhau)
-      res.json(result)
-    } catch (err) { next(err) }
-  },
-
-  // Backward compatibility alias
-  guiOtp: async (req, res, next) => {
-    try {
-      const { sdt, matKhau } = req.body
-      const result = await CongDanService.yeuCauOtpDangNhap(sdt, matKhau)
-      res.json(result)
-    } catch (err) { next(err) }
-  },
-
-  // POST /cong-dan/dang-nhap/xac-nhan-otp
-  xacNhanOtp: async (req, res, next) => {
-    try {
-      const { sdt, otp } = req.body
-      const result = await CongDanService.xacNhanOtp(sdt, otp)
+      const result = await CongDanService.dangNhap(sdt, matKhau)
       const token = signAccessToken({
         sub: String(result.congDan.id),
         role: 'citizen',

@@ -60,6 +60,14 @@ export const CanBoController = {
     } catch (err) { next(err) }
   },
 
+  // GET /can-bo/dashboard
+  getDashboard: async (req, res, next) => {
+    try {
+      const result = await CanBoService.getDashboard(req.user.userId)
+      res.json(result)
+    } catch (err) { next(err) }
+  },
+
   // GET /can-bo
   getDanhSachCanBo: async (req, res, next) => {
     try {

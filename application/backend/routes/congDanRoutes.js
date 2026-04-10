@@ -6,9 +6,7 @@ const router = express.Router()
 
 // Auth
 router.post('/dang-ky', CongDanController.dangKyTaiKhoan)
-router.post('/dang-nhap/yeu-cau-otp', CongDanController.yeuCauOtpDangNhap)
-router.post('/dang-nhap/gui-otp', CongDanController.guiOtp)
-router.post('/dang-nhap/xac-nhan-otp', CongDanController.xacNhanOtp)
+router.post('/dang-nhap', CongDanController.dangNhap)
 router.post('/dang-nhap/vneid', CongDanController.dangNhapVneId)
 
 // Hồ sơ
