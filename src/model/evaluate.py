@@ -84,7 +84,11 @@ def main() -> None:
     if "class_weights" in state_dict:
         state_dict = {k: v for k, v in state_dict.items() if k != "class_weights"}
 
-    model.load_state_dict(state_dict, strict=False)
+    load_result = model.load_state_dict(state_dict, strict=False)
+    if load_result.missing_keys:
+        logger.warning(f"Missing keys in checkpoint: {load_result.missing_keys}")
+    if load_result.unexpected_keys:
+        logger.warning(f"Unexpected keys in checkpoint: {load_result.unexpected_keys}")
 
     # Set the model to evaluation mode
     model.eval()

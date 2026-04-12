@@ -24,39 +24,6 @@ class BottleneckAdapter(nn.Module):
         return self.up(self.act(self.down(x))).to(x.dtype)
 
 
-# class DebertaV2LayerWithAdapters(nn.Module):
-#     """Wraps a pretrained DebertaV2Layer, keeps base weights as submodule base"""
-#     def __init__(self, hidden_size: int, base_layer: DebertaV2Layer, bottleneck_dim: int):
-#         super().__init__()
-#         self.base = base_layer
-#         self.adapter_after_attn = BottleneckAdapter(hidden_size, bottleneck_dim)
-#         self.adapter_after_ffn = BottleneckAdapter(hidden_size, bottleneck_dim)
-
-#     def forward(
-#         self,
-#         hidden_states: torch.Tensor,
-#         attention_mask: torch.Tensor,
-#         query_states=None,
-#         relative_pos=None,
-#         rel_embeddings=None,
-#         output_attentions: bool = False,
-#     ):
-#         attention_output, att_matrix = self.base.attention(
-#             hidden_states,
-#             attention_mask,
-#             output_attentions=output_attentions,
-#             query_states=query_states,
-#             relative_pos=relative_pos,
-#             rel_embeddings=rel_embeddings,
-#         )
-#         attention_output = attention_output + self.adapter_after_attn(attention_output)
-#         intermediate_output = self.base.intermediate(attention_output)
-#         layer_output = self.base.output(intermediate_output, attention_output)
-#         layer_output = layer_output + self.adapter_after_ffn(layer_output)
-#         if output_attentions:
-#             return (layer_output, att_matrix)
-#         return (layer_output, None)
-
 class BaseAdapterOutput(nn.Module):
     """Base class for adapter-wrapped output layers (consolidates SelfOutput + FFNOutput)"""
     def __init__(self, base_output: nn.Module, hidden_size: int, bottleneck_dim: int):
@@ -124,8 +91,19 @@ def inject_adapters_into_deberta(model: nn.Module, bottleneck_dim: int) -> None:
         new_layers.append(DebertaV2LayerWithAdapters(hidden_size, layer, bottleneck_dim))
     model.encoder.layer = new_layers
 
-# Freeze all parameters, then enable adapters and any LayerNorm under the encoder
+
 def freeze_backbone_except_adapters_and_layernorm(model: nn.Module) -> None:
+    """Freeze all backbone parameters, then selectively unfreeze adapters and encoder LayerNorms.
+
+    Freeze strategy (intentional design):
+      - Adapters (``.adapter.``): Always unfrozen — these are the primary trainable parameters.
+      - Encoder LayerNorms (``encoder.layer.*.LayerNorm``): Unfrozen to allow the model to
+        re-calibrate hidden-state distributions after adapter injection.
+      - Embedding LayerNorm (``embeddings.LayerNorm``): Kept **frozen** to preserve pretrained
+        token-level representations. Unfreezing embeddings would risk destabilizing the input
+        space, especially with small fine-tuning datasets.
+      - All other backbone weights (attention, FFN, embeddings): Frozen.
+    """
     for _, p in model.named_parameters():
         p.requires_grad = False
     for name, p in model.named_parameters():

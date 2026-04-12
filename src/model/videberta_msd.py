@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .adapters import freeze_backbone_except_adapters_and_layernorm, inject_adapters_into_deberta
-from .config import TrainConfig
+from .config import ASPECTS, TrainConfig
 from .hf_videberta import load_deberta_v2_encoder
 
 def _semantic_pool_mask(attention_mask: torch.Tensor) -> torch.Tensor:
@@ -40,25 +40,39 @@ def _semantic_pool_mask(attention_mask: torch.Tensor) -> torch.Tensor:
     return token_mask
 
 
+# ── Internal pooling with pre-computed mask ──────────────────────────────
+
+def _mean_pool_with_mask(hidden: torch.Tensor, mask_3d: torch.Tensor) -> torch.Tensor:
+    """Mean-pool over sequence dim using a pre-computed [B, L, 1] float mask."""
+    summed = (hidden * mask_3d).sum(dim=1)
+    denom = mask_3d.sum(dim=1).clamp(min=1e-6)
+    return summed / denom
+
+
+def _max_pool_with_mask(hidden: torch.Tensor, mask_3d: torch.Tensor) -> torch.Tensor:
+    """Max-pool over sequence dim using a pre-computed [B, L, 1] bool-like mask."""
+    fill_value = torch.finfo(hidden.dtype).min
+    masked_hidden = hidden.masked_fill(mask_3d == 0, fill_value)
+    pooled = masked_hidden.max(dim=1).values
+
+    empty_rows = ~(mask_3d.squeeze(-1).bool()).any(dim=1)
+    if empty_rows.any():
+        pooled[empty_rows] = 0.0
+    return pooled
+
+
+# ── Public API (backward-compatible, self-computes mask) ─────────────────
+
 # Calculate mean pooling over the sequence dimension, ignoring padding and special tokens.
 # hidden: [B, L, H], mask: [B, L] with 1 for real tokens
 def masked_mean_pool(hidden: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
     mask = _semantic_pool_mask(attention_mask).unsqueeze(-1).to(hidden.dtype)
-    summed = (hidden * mask).sum(dim=1)
-    denom = mask.sum(dim=1).clamp(min=1e-6)
-    return summed / denom
+    return _mean_pool_with_mask(hidden, mask)
 
 # Calculate max pooling over the sequence dimension, ignoring padding and special tokens.
 def masked_max_pool(hidden: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-    mask = _semantic_pool_mask(attention_mask).unsqueeze(-1)
-    fill_value = torch.finfo(hidden.dtype).min
-    masked_hidden = hidden.masked_fill(~mask, fill_value)
-    pooled = masked_hidden.max(dim=1).values
-
-    empty_rows = ~mask.squeeze(-1).any(dim=1)
-    if empty_rows.any():
-        pooled[empty_rows] = 0.0
-    return pooled
+    mask = _semantic_pool_mask(attention_mask).unsqueeze(-1).to(hidden.dtype)
+    return _max_pool_with_mask(hidden, mask)
 
 
 class ViDeBERTaAspectMSD(nn.Module):
@@ -68,7 +82,7 @@ class ViDeBERTaAspectMSD(nn.Module):
         self.cfg = cfg
 
         if class_weights is not None:
-            self.register_buffer("class_weights", class_weights)  # [6, 3]
+            self.register_buffer("class_weights", class_weights)  # [num_aspects, C]
         else:
             self.class_weights = None
 
@@ -82,7 +96,8 @@ class ViDeBERTaAspectMSD(nn.Module):
 
         h = self.backbone.config.hidden_size
         self.pooled_dim = 3 * h if cfg.use_multipool else h
-        self.num_aspects = 6
+        # Derive num_aspects from ASPECTS to avoid hard-coding.
+        self.num_aspects = len(ASPECTS)
         self.aspect_heads = nn.ModuleList(
             [nn.Linear(self.pooled_dim, cfg.num_classes_per_aspect) for _ in range(self.num_aspects)]
         )
@@ -90,13 +105,16 @@ class ViDeBERTaAspectMSD(nn.Module):
         for p in self.aspect_heads.parameters():
             p.requires_grad = True
 
-    # Multi-pooling: concatenate CLS, mean pool, and max pool
+    # Multi-pooling: concatenate CLS, mean pool, and max pool.
+    # The semantic pool mask is computed once and reused for both mean and max pooling.
     def pool(self, hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         cls_vec = hidden_states[:, 0, :]
         if not self.cfg.use_multipool:
             return cls_vec
-        mean_vec = masked_mean_pool(hidden_states, attention_mask)
-        max_vec = masked_max_pool(hidden_states, attention_mask)
+        # Compute mask once, reuse for both pools to avoid redundant computation.
+        mask_3d = _semantic_pool_mask(attention_mask).unsqueeze(-1).to(hidden_states.dtype)
+        mean_vec = _mean_pool_with_mask(hidden_states, mask_3d)
+        max_vec = _max_pool_with_mask(hidden_states, mask_3d)
         return torch.cat([cls_vec, mean_vec, max_vec], dim=-1)
 
     def forward(
@@ -133,6 +151,10 @@ class ViDeBERTaAspectMSD(nn.Module):
             logits_k = self._heads_forward(v_k)
             losses.append(self._mean_aspect_ce(logits_k, labels))
         loss = torch.stack(losses, dim=0).mean()
+        # NOTE: logits returned during MSD training are computed under torch.no_grad().
+        # They are used ONLY for monitoring/logging (e.g. validation macro-F1 display),
+        # NOT for loss computation. If downstream code ever needs gradients from these
+        # logits, this block must be removed.
         with torch.no_grad():
             logits_eval = self._heads_forward(v)
         return {"loss": loss, "logits": logits_eval}
@@ -142,7 +164,14 @@ class ViDeBERTaAspectMSD(nn.Module):
         return torch.stack([head(v) for head in self.aspect_heads], dim=1)
 
     def _mean_aspect_ce(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        # logits [B, 6, C], labels [B, 6]
+        """Compute mean cross-entropy loss across all aspects.
+
+        A Python loop is used instead of vectorized single-call CE because each aspect
+        has its own class_weights tensor (shape [C]), and PyTorch's F.cross_entropy does
+        not support per-group weights in a single call. With only 6 aspects the loop
+        overhead is negligible compared to the backbone forward pass.
+        """
+        # logits [B, num_aspects, C], labels [B, num_aspects]
         b, a, c = logits.shape
         losses = []
         for i in range(a):
@@ -150,7 +179,9 @@ class ViDeBERTaAspectMSD(nn.Module):
             losses.append(
                 F.cross_entropy(logits[:, i, :], labels[:, i].long(), weight=w, label_smoothing=0.1)
             )
-        return torch.stack(losses).mean()
+        # Return [1] tensor instead of scalar so DataParallel's gather can
+        # concatenate per-replica losses along dim 0.
+        return torch.stack(losses).mean().unsqueeze(0)
 
     @property
     def hidden_size(self) -> int:

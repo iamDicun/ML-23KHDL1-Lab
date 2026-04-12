@@ -49,7 +49,7 @@ class TrainConfig:
     num_epochs: int = 10
     learning_rate: float = 2e-4
     weight_decay: float = 0.01
-    warmup_ratio: float = 0.06
+    warmup_ratio: float = 0.1
     max_grad_norm: float = 1.0
     seed: int = 42
     num_classes_per_aspect: int = 3
@@ -60,11 +60,20 @@ class TrainConfig:
     # If use_msd and msd_single_p is not None, repeat this single p five times instead of multi-rate.
     msd_single_p: float | None = None
 
+    # Early stopping: stop training if val macro-F1 does not improve for this many epochs.
+    early_stopping_patience: int = 3
+    # Mixed precision training (torch.cuda.amp). Only effective on CUDA devices.
+    use_amp: bool = False
+    # Multi-GPU training via DataParallel. Auto-detected: only activates when >1 GPU available.
+    use_multi_gpu: bool = True
+
     def __post_init__(self) -> None:
         if self.msd_single_p is not None and not (0.0 <= self.msd_single_p < 1.0):
             raise ValueError(f"msd_single_p must be in [0, 1), got {self.msd_single_p}")
         if self.num_workers < 0:
             raise ValueError(f"num_workers must be >= 0, got {self.num_workers}")
+        if self.early_stopping_patience < 1:
+            raise ValueError(f"early_stopping_patience must be >= 1, got {self.early_stopping_patience}")
 
     def msd_rates(self) -> tuple[float, ...]:
         if not self.use_msd:

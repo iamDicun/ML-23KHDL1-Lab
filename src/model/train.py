@@ -12,11 +12,12 @@ import time
 
 import numpy as np
 import torch
+import torch.nn as nn
+from sklearn.metrics import f1_score
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer, get_linear_schedule_with_warmup
-import torch.nn.functional as F
 
 
 _SRC_ROOT = Path(__file__).resolve().parents[1]
@@ -47,8 +48,6 @@ def set_seed(seed: int) -> None:
 def macro_f1_from_logits(
     logits: torch.Tensor, labels: torch.Tensor, num_classes: int
 ) -> tuple[float, np.ndarray]:
-    from sklearn.metrics import f1_score
-
     # Get predicted class with highest logit for each aspect
     preds = logits.argmax(dim=-1).cpu().numpy()
     # Convert labels to numpy array
@@ -63,8 +62,38 @@ def macro_f1_from_logits(
     return float(np.mean(f1s)), np.array(f1s, dtype=np.float64)
 
 
+# ── Multi-GPU helpers ────────────────────────────────────────────────────
+
+def _unwrap_model(model: nn.Module) -> ViDeBERTaAspectMSD:
+    """Get the underlying ViDeBERTaAspectMSD from a DataParallel wrapper (or return as-is)."""
+    if isinstance(model, nn.DataParallel):
+        return model.module
+    return model
+
+
+def _maybe_wrap_dp(model: ViDeBERTaAspectMSD, cfg: TrainConfig, device: torch.device) -> nn.Module:
+    """Wrap model in DataParallel if multiple GPUs are available and enabled.
+
+    DataParallel approach for Kaggle T4 x2:
+    - Splits each batch across available GPUs (batch_size / num_gpus per GPU)
+    - Each GPU runs a replica of the model on its sub-batch
+    - Gradients are aggregated on GPU 0 before optimizer step
+    - Effective batch size stays the same from the user's perspective
+
+    Returns the (possibly wrapped) model.
+    """
+    n_gpus = torch.cuda.device_count()
+    if not cfg.use_multi_gpu or device.type != "cuda" or n_gpus < 2:
+        if cfg.use_multi_gpu and device.type == "cuda" and n_gpus < 2:
+            logger.info(f"Multi-GPU enabled but only {n_gpus} GPU found — using single GPU")
+        return model
+
+    logger.info(f"Wrapping model in DataParallel across {n_gpus} GPUs: {[torch.cuda.get_device_name(i) for i in range(n_gpus)]}")
+    return nn.DataParallel(model)
+
+
 @torch.no_grad()
-def evaluate_epoch(model: ViDeBERTaAspectMSD, loader: DataLoader, device: torch.device, num_classes: int):
+def evaluate_epoch(model: nn.Module, loader: DataLoader, device: torch.device, num_classes: int):
     model.eval()
     total_loss = 0.0
     n_batches = 0
@@ -73,23 +102,24 @@ def evaluate_epoch(model: ViDeBERTaAspectMSD, loader: DataLoader, device: torch.
 
     for batch in loader:
         batch = {k: v.to(device) for k, v in batch.items()}
-        # Tách labels ra, chỉ truyền input để lấy logits
+        # Reuse the model's eval loss so val loss matches training objective.
         labels_batch = batch["labels"]
         out = model(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
+            labels=labels_batch,
         )
-        # Tính unweighted loss thủ công
         logits = out["logits"]  # [B, 6, C]
-        b, a, c = logits.shape
-        loss = F.cross_entropy(
-            logits.reshape(b * a, c),
-            labels_batch.reshape(b * a).long()
-        )
+        loss = out["loss"]
+        if loss is None:
+            raise RuntimeError("Expected validation loss when labels are provided")
+        # DataParallel returns per-replica losses; average them.
+        if loss.dim() > 0:
+            loss = loss.mean()
         total_loss += loss.item()
         n_batches += 1
-        all_logits.append(logits)
-        all_labels.append(labels_batch)
+        all_logits.append(logits.cpu())
+        all_labels.append(labels_batch.cpu())
     
     logits = torch.cat(all_logits, dim=0)
     labels = torch.cat(all_labels, dim=0)
@@ -115,6 +145,9 @@ def train() -> None:
     parser.add_argument("--no-multipool", action="store_true", help="CLS only (ablation A)")
     parser.add_argument("--no-msd", action="store_true", help="Disable MSD branches")
     parser.add_argument("--msd-single-p", type=float, default=None, help="Use one dropout rate x5")
+    parser.add_argument("--patience", type=int, default=None, help="Early stopping patience (epochs)")
+    parser.add_argument("--amp", action="store_true", help="Enable mixed precision training (CUDA only)")
+    parser.add_argument("--no-multi-gpu", action="store_true", help="Disable DataParallel multi-GPU")
     args = parser.parse_args()
 
     cfg = TrainConfig()
@@ -142,10 +175,24 @@ def train() -> None:
         cfg.use_msd = False
     if args.msd_single_p is not None:
         cfg.msd_single_p = args.msd_single_p
+    if args.patience is not None:
+        cfg.early_stopping_patience = args.patience
+    if args.amp:
+        cfg.use_amp = True
+    if args.no_multi_gpu:
+        cfg.use_multi_gpu = False
 
     # Set random seeds and device
     set_seed(cfg.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # AMP setup: only effective on CUDA devices
+    use_amp = cfg.use_amp and device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    if cfg.use_amp and not use_amp:
+        logger.warning("AMP requested but no CUDA device available — falling back to FP32")
+    if use_amp:
+        logger.info("Mixed precision training (AMP) enabled")
 
     # Check label values in training data
     verify_label_values(cfg.train_csv, ASPECT_LABEL_COLUMNS, cfg.num_classes_per_aspect)
@@ -155,7 +202,7 @@ def train() -> None:
     train_df = load_review_frame(cfg.train_csv)
     val_df = load_review_frame(cfg.val_csv)
 
-    # Covert DataFrames to Datasets that PyTorch can use, with tokenization and label tensorization
+    # Convert DataFrames to Datasets that PyTorch can use, with tokenization and label tensorization
     train_ds = AspectReviewDataset(train_df, tokenizer, cfg.max_length)
     val_ds = AspectReviewDataset(val_df, tokenizer, cfg.max_length)
 
@@ -187,10 +234,13 @@ def train() -> None:
         logger.info(f"  {name}: {[f'{x:.3f}' for x in w.tolist()]}")
 
     # Initialize the model and setup device
-    model = ViDeBERTaAspectMSD(cfg, class_weights=class_weights).to(device)
+    base_model = ViDeBERTaAspectMSD(cfg, class_weights=class_weights).to(device)
 
-    # Get trainable parameters
-    trainable = [p for p in model.parameters() if p.requires_grad]
+    # Wrap in DataParallel if multiple GPUs available (keeps reference to base for saving)
+    model = _maybe_wrap_dp(base_model, cfg, device)
+
+    # Get trainable parameters (always from base model, not the DP wrapper)
+    trainable = [p for p in base_model.parameters() if p.requires_grad]
 
     # Setup optimizer
     opt = AdamW(trainable, lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
@@ -208,6 +258,9 @@ def train() -> None:
     cfg.model_dir.mkdir(parents=True, exist_ok=True)
     best_path = cfg.model_dir / "best.pt"
     best_macro = -1.0
+    patience_counter = 0
+
+    logger.info(f"Early stopping patience: {cfg.early_stopping_patience} epochs")
 
     # Main training loop over epochs
     for epoch in range(cfg.num_epochs):
@@ -223,19 +276,28 @@ def train() -> None:
             # Move batch tensors to the configured device
             batch = {k: v.to(device) for k, v in batch.items()}
 
-            # Set gradients to zero before backpropagation
-            opt.zero_grad()
-            # Forward pass through the model to get output logits and loss
-            out = model(**batch)
-            # Extract loss from the model output; if loss is not None, perform backpropagation and optimization step
-            loss = out["loss"]
-            loss.backward()
+            # Set gradients to zero before backpropagation (set_to_none=True saves memory)
+            opt.zero_grad(set_to_none=True)
 
-            # Clip gradients to prevent exploding gradients; this modifies the gradients in-place
+            # Forward pass with optional AMP autocast
+            with torch.amp.autocast("cuda", enabled=use_amp):
+                out = model(**batch)
+                loss = out["loss"]
+
+            # DataParallel returns per-replica losses; average them to get a single scalar.
+            if loss.dim() > 0:
+                loss = loss.mean()
+
+            # Backward pass with GradScaler (no-op if AMP is disabled)
+            scaler.scale(loss).backward()
+
+            # Clip gradients to prevent exploding gradients (unscale first for AMP)
+            scaler.unscale_(opt)
             torch.nn.utils.clip_grad_norm_(trainable, cfg.max_grad_norm)
 
             # Perform optimization step to update model parameters, and step the learning rate scheduler
-            opt.step()
+            scaler.step(opt)
+            scaler.update()
             sched.step()
             # Update running loss and number of steps for progress bar display
             running += loss.item()
@@ -244,7 +306,8 @@ def train() -> None:
             pbar.set_postfix(loss=f"{running / n_steps:.4f}")
         
         epoch_time = time.time() - epoch_start
-        logger.info(f"epoch {epoch+1} training time: {epoch_time:.1f}s ({epoch_time/60:.1f}min)")
+        avg_train_loss = running / max(n_steps, 1)
+        logger.info(f"epoch {epoch+1} train_loss={avg_train_loss:.4f} time={epoch_time:.1f}s ({epoch_time/60:.1f}min)")
 
         # After each epoch, evaluate the model on the validation set and calculate macro-F1 score
         val_loss, macro, per_f1 = evaluate_epoch(model, val_loader, device, cfg.num_classes_per_aspect)
@@ -252,11 +315,13 @@ def train() -> None:
         for name, f1 in zip(ASPECT_NAMES_EN, per_f1):
             logger.info(f"  {name}: {f1:.4f}")
 
-        # If the validation macro-F1 score is the best seen so far, save a checkpoint of the model state and training configuration
+        # If the validation macro-F1 score is the best seen so far, save a checkpoint of the model state and training configuration.
+        # Always save the unwrapped (base) model state dict so checkpoints are DataParallel-agnostic.
         if macro > best_macro:
             best_macro = macro
+            patience_counter = 0
             payload = {
-                "model_state_dict": model.state_dict(),
+                "model_state_dict": _unwrap_model(model).state_dict(),
                 "class_weights": class_weights,
                 "train_config": train_config_to_saved_dict(cfg, save_dir=cfg.model_dir),
                 "tokenizer_name": cfg.model_name,
@@ -265,6 +330,16 @@ def train() -> None:
             with open(cfg.model_dir / "train_config.json", "w", encoding="utf-8") as f:
                 json.dump(payload["train_config"], f, indent=2, ensure_ascii=False)
             logger.info(f"saved checkpoint macro-F1={macro:.4f} -> {best_path}")
+        else:
+            patience_counter += 1
+            logger.info(f"no improvement ({patience_counter}/{cfg.early_stopping_patience})")
+            if patience_counter >= cfg.early_stopping_patience:
+                logger.warning(
+                    f"Early stopping triggered at epoch {epoch+1}: "
+                    f"no improvement for {cfg.early_stopping_patience} epochs. "
+                    f"Best macro-F1={best_macro:.4f}"
+                )
+                break
 
     logger.info(f"done. best macro-F1={best_macro:.4f}")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 import numpy as np
@@ -54,7 +55,12 @@ def load_review_frame(csv_path: str | Path, aspect_columns: list[str] | None = N
     return df
 
 class AspectReviewDataset(Dataset):
-    """Dataset for the review frame"""
+    """Dataset for the review frame.
+
+    Tokenization is performed once during __init__ (batch tokenization) and cached
+    as tensors, eliminating redundant per-epoch tokenization overhead. This trades
+    a modest increase in memory for significantly faster data loading.
+    """
     def __init__(
         self,
         df: pd.DataFrame,
@@ -62,28 +68,36 @@ class AspectReviewDataset(Dataset):
         max_length: int,
         aspect_columns: list[str] | None = None,
     ):
-        self.texts = df[TEXT_COLUMN].astype(str).tolist()
         self.aspect_columns = aspect_columns or ASPECT_LABEL_COLUMNS
+        texts = df[TEXT_COLUMN].astype(str).tolist()
+
+        # Validate labels
         labels = _validate_labels(df, self.aspect_columns, num_classes=3)
         self.labels = torch.tensor(labels, dtype=torch.long)
-        self.tokenizer = tokenizer
-        self.max_length = max_length
 
-    def __len__(self) -> int:
-        return len(self.texts)
-
-    # Get an item from the dataset
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
-        enc = self.tokenizer(
-            self.texts[idx],
-            max_length=self.max_length,
+        # Pre-tokenize all texts at init time (batch tokenization is much faster than
+        # tokenizing one sample at a time in __getitem__).
+        t0 = time.time()
+        encodings = tokenizer(
+            texts,
+            max_length=max_length,
             padding="max_length",
             truncation=True,
             return_tensors="pt",
         )
+        self.input_ids = encodings["input_ids"]            # [N, L]
+        self.attention_mask = encodings["attention_mask"]   # [N, L]
+        elapsed = time.time() - t0
+        logger.info(f"Pre-tokenized {len(texts)} samples in {elapsed:.2f}s")
+
+    def __len__(self) -> int:
+        return self.input_ids.size(0)
+
+    # Get an item from the dataset (no tokenization — just tensor indexing)
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         return {
-            "input_ids": enc["input_ids"].squeeze(0),
-            "attention_mask": enc["attention_mask"].squeeze(0),
+            "input_ids": self.input_ids[idx],
+            "attention_mask": self.attention_mask[idx],
             "labels": self.labels[idx],
         }
 
