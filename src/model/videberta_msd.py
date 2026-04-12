@@ -6,7 +6,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .adapters import freeze_backbone_except_adapters_and_layernorm, inject_adapters_into_deberta
+from .adapters import (
+    freeze_backbone_except_adapters_and_layernorm,
+    inject_adapters_into_deberta,
+    unfreeze_last_n_encoder_layers,
+)
 from .config import ASPECTS, TrainConfig
 from .hf_videberta import load_deberta_v2_encoder
 
@@ -93,6 +97,7 @@ class ViDeBERTaAspectMSD(nn.Module):
             )
         inject_adapters_into_deberta(self.backbone, cfg.adapter_bottleneck_dim)
         freeze_backbone_except_adapters_and_layernorm(self.backbone)
+        unfreeze_last_n_encoder_layers(self.backbone, cfg.unfreeze_encoder_layers)
 
         h = self.backbone.config.hidden_size
         self.pooled_dim = 3 * h if cfg.use_multipool else h

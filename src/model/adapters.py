@@ -113,3 +113,31 @@ def freeze_backbone_except_adapters_and_layernorm(model: nn.Module) -> None:
         )
         if is_adapter or is_encoder_layernorm:
             p.requires_grad = True
+
+
+def unfreeze_last_n_encoder_layers(model: nn.Module, n: int) -> int:
+    """Unfreeze **all** parameters in the last ``n`` ``encoder.layer`` blocks.
+
+    Call **after** :func:`freeze_backbone_except_adapters_and_layernorm`. Adapters and
+    LayerNorms in lower blocks remain trainable as before; this adds full attention/FFN
+    weights (and any other tensors) in the top ``n`` blocks.
+
+    Returns:
+        Number of blocks actually unfrozen (clamped to ``len(encoder.layer)``).
+    """
+    if n <= 0:
+        return 0
+    layers = model.encoder.layer
+    n_total = len(layers)
+    k = min(n, n_total)
+    start_idx = n_total - k
+    prefix = "encoder.layer."
+    for name, p in model.named_parameters():
+        if not name.startswith(prefix):
+            continue
+        idx_part = name[len(prefix) :].split(".", 1)[0]
+        if not idx_part.isdigit():
+            continue
+        if int(idx_part) >= start_idx:
+            p.requires_grad = True
+    return k

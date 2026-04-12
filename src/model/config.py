@@ -46,7 +46,7 @@ class TrainConfig:
     max_length: int = 256
     batch_size: int = 32
     num_workers: int = 0
-    num_epochs: int = 10
+    num_epochs: int = 20
     learning_rate: float = 2e-4
     weight_decay: float = 0.01
     warmup_ratio: float = 0.1
@@ -54,7 +54,12 @@ class TrainConfig:
     seed: int = 42
     num_classes_per_aspect: int = 3
     adapter_bottleneck_dim: int = 64
-    
+    # Fully unfreeze the last N encoder blocks (attention + FFN + adapters there).
+    # 0 = adapter + encoder LayerNorm only (previous behavior).
+    unfreeze_encoder_layers: int = 0
+    # AdamW LR for parameters inside those top-N blocks (discriminative fine-tuning).
+    encoder_learning_rate: float = 5e-5
+
     use_multipool: bool = True
     use_msd: bool = True
     # If use_msd and msd_single_p is not None, repeat this single p five times instead of multi-rate.
@@ -74,6 +79,10 @@ class TrainConfig:
             raise ValueError(f"num_workers must be >= 0, got {self.num_workers}")
         if self.early_stopping_patience < 1:
             raise ValueError(f"early_stopping_patience must be >= 1, got {self.early_stopping_patience}")
+        if self.unfreeze_encoder_layers < 0:
+            raise ValueError(f"unfreeze_encoder_layers must be >= 0, got {self.unfreeze_encoder_layers}")
+        if self.encoder_learning_rate <= 0:
+            raise ValueError(f"encoder_learning_rate must be > 0, got {self.encoder_learning_rate}")
 
     def msd_rates(self) -> tuple[float, ...]:
         if not self.use_msd:

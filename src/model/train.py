@@ -9,6 +9,7 @@ import random
 import sys
 from pathlib import Path
 import time
+from typing import Any
 
 import numpy as np
 import torch
@@ -69,6 +70,53 @@ def _unwrap_model(model: nn.Module) -> ViDeBERTaAspectMSD:
     if isinstance(model, nn.DataParallel):
         return model.module
     return model
+
+
+def _encoder_block_index(param_name: str) -> int | None:
+    prefix = "encoder.layer."
+    if not param_name.startswith(prefix):
+        return None
+    part = param_name[len(prefix) :].split(".", 1)[0]
+    return int(part) if part.isdigit() else None
+
+
+def build_adamw_param_groups(model: ViDeBERTaAspectMSD, cfg: TrainConfig) -> list[dict[str, Any]]:
+    """Heads and lower-block adapters use ``learning_rate``; top-N encoder blocks use ``encoder_learning_rate``."""
+    backbone = model.backbone
+    n_layers = len(backbone.encoder.layer)
+    k = min(max(0, cfg.unfreeze_encoder_layers), n_layers)
+    top_from = n_layers - k
+
+    backbone_lower: list[nn.Parameter] = []
+    backbone_top: list[nn.Parameter] = []
+    for name, p in backbone.named_parameters():
+        if not p.requires_grad:
+            continue
+        idx = _encoder_block_index(name)
+        if idx is not None and idx >= top_from:
+            backbone_top.append(p)
+        else:
+            backbone_lower.append(p)
+
+    head_params = [p for p in model.aspect_heads.parameters() if p.requires_grad]
+
+    groups: list[dict[str, Any]] = []
+    if backbone_lower:
+        groups.append(
+            {"params": backbone_lower, "lr": cfg.learning_rate, "weight_decay": cfg.weight_decay}
+        )
+    if backbone_top:
+        groups.append(
+            {"params": backbone_top, "lr": cfg.encoder_learning_rate, "weight_decay": cfg.weight_decay}
+        )
+    if head_params:
+        groups.append(
+            {"params": head_params, "lr": cfg.learning_rate, "weight_decay": cfg.weight_decay}
+        )
+
+    if not groups:
+        raise RuntimeError("No trainable parameters")
+    return groups
 
 
 def _maybe_wrap_dp(model: ViDeBERTaAspectMSD, cfg: TrainConfig, device: torch.device) -> nn.Module:
@@ -148,6 +196,18 @@ def train() -> None:
     parser.add_argument("--patience", type=int, default=None, help="Early stopping patience (epochs)")
     parser.add_argument("--amp", action="store_true", help="Enable mixed precision training (CUDA only)")
     parser.add_argument("--no-multi-gpu", action="store_true", help="Disable DataParallel multi-GPU")
+    parser.add_argument(
+        "--unfreeze-layers",
+        type=int,
+        default=None,
+        help="Unfreeze last N encoder blocks fully (0 = adapters+LayerNorm only)",
+    )
+    parser.add_argument(
+        "--encoder-lr",
+        type=float,
+        default=None,
+        help="AdamW LR for params in unfrozen encoder blocks (discriminative fine-tuning)",
+    )
     args = parser.parse_args()
 
     cfg = TrainConfig()
@@ -181,6 +241,10 @@ def train() -> None:
         cfg.use_amp = True
     if args.no_multi_gpu:
         cfg.use_multi_gpu = False
+    if args.unfreeze_layers is not None:
+        cfg.unfreeze_encoder_layers = args.unfreeze_layers
+    if args.encoder_lr is not None:
+        cfg.encoder_learning_rate = args.encoder_lr
 
     # Set random seeds and device
     set_seed(cfg.seed)
@@ -239,11 +303,20 @@ def train() -> None:
     # Wrap in DataParallel if multiple GPUs available (keeps reference to base for saving)
     model = _maybe_wrap_dp(base_model, cfg, device)
 
-    # Get trainable parameters (always from base model, not the DP wrapper)
-    trainable = [p for p in base_model.parameters() if p.requires_grad]
+    param_groups = build_adamw_param_groups(base_model, cfg)
+    opt = AdamW(param_groups)
+    trainable: list[nn.Parameter] = []
+    for g in param_groups:
+        trainable.extend(g["params"])
 
-    # Setup optimizer
-    opt = AdamW(trainable, lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
+    n_trainable = sum(p.numel() for p in trainable)
+    logger.info(f"Trainable parameters: {n_trainable:,}")
+    if cfg.unfreeze_encoder_layers > 0:
+        n_bl = len(base_model.backbone.encoder.layer)
+        logger.info(
+            f"Last {min(cfg.unfreeze_encoder_layers, n_bl)} encoder block(s) use lr={cfg.encoder_learning_rate}; "
+            f"heads/adapters/lower blocks use lr={cfg.learning_rate}"
+        )
 
     # Calculate total training steps
     total_steps = len(train_loader) * cfg.num_epochs
