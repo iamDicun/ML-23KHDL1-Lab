@@ -17,7 +17,6 @@ DEFAULT_MODEL_NAME = "Fsoft-AIC/videberta-base"
 TEXT_COLUMN = "Review"
 
 # Aspect definitions: (Vietnamese name, English name, label column)
-# Single source of truth to prevent mismatch
 ASPECTS = [
     ("vệ sinh", "hygiene", "vệ sinh_label"),
     ("đồ ăn thức uống", "food", "đồ ăn thức uống_label"),
@@ -27,7 +26,6 @@ ASPECTS = [
     ("dịch vụ", "service", "dịch vụ_label"),
 ]
 
-# Derived from ASPECTS for backwards compatibility
 ASPECT_LABEL_COLUMNS = [a[2] for a in ASPECTS]
 ASPECT_NAMES_EN = [a[1] for a in ASPECTS]
 ASPECT_NAMES_VI = [a[0] for a in ASPECTS]
@@ -38,11 +36,17 @@ MSD_DROPOUT_RATES = (0.05, 0.1, 0.15, 0.2, 0.25)
 @dataclass
 class TrainConfig:
     """Configuration for training the model"""
+
+    # Hugging Face model name or path
     model_name: str = DEFAULT_MODEL_NAME
+
+    # Path to CSV files for training, validation, testing, and model folder
     train_csv: Path = field(default_factory=lambda: DATA_CLEANED_DIR / "crawl_only_train.csv")
     val_csv: Path = field(default_factory=lambda: DATA_CLEANED_DIR / "crawl_only_val.csv")
     test_csv: Path = field(default_factory=lambda: DATA_CLEANED_DIR / "crawl_only_test.csv")
     model_dir: Path = field(default_factory=lambda: MODEL_DIR)
+    
+    # Hyperparameters
     max_length: int = 256
     batch_size: int = 32
     num_workers: int = 0
@@ -54,8 +58,8 @@ class TrainConfig:
     seed: int = 42
     num_classes_per_aspect: int = 3
     adapter_bottleneck_dim: int = 64
-    # Fully unfreeze the last N encoder blocks (attention + FFN + adapters there).
-    # 0 = adapter + encoder LayerNorm only (previous behavior).
+    # Fully unfreeze the last N encoder blocks (attention + FFN + adapters there)
+    # 0 = adapter + encoder LayerNorm only
     unfreeze_encoder_layers: int = 0
     # AdamW LR for parameters inside those top-N blocks (discriminative fine-tuning).
     encoder_learning_rate: float = 5e-5
@@ -65,14 +69,17 @@ class TrainConfig:
     # If use_msd and msd_single_p is not None, repeat this single p five times instead of multi-rate.
     msd_single_p: float | None = None
 
-    # Early stopping: stop training if val macro-F1 does not improve for this many epochs.
+    # Early stopping: stop training if val macro-F1 does not improve for this many epochs
     early_stopping_patience: int = 3
-    # Mixed precision training (torch.cuda.amp). Only effective on CUDA devices.
+
+    # Mixed precision training (torch.cuda.amp)
     use_amp: bool = False
-    # Multi-GPU training via DataParallel. Auto-detected: only activates when >1 GPU available.
+
+    # Multi-GPU training via DataParallel
     use_multi_gpu: bool = True
 
     def __post_init__(self) -> None:
+        """Validate config values after initialization"""
         if self.msd_single_p is not None and not (0.0 <= self.msd_single_p < 1.0):
             raise ValueError(f"msd_single_p must be in [0, 1), got {self.msd_single_p}")
         if self.num_workers < 0:
@@ -85,6 +92,7 @@ class TrainConfig:
             raise ValueError(f"encoder_learning_rate must be > 0, got {self.encoder_learning_rate}")
 
     def msd_rates(self) -> tuple[float, ...]:
+        """Get the actual MSD dropout rates to use based on config flags"""
         if not self.use_msd:
             return (0.0,)
         if self.msd_single_p is not None:
@@ -93,6 +101,7 @@ class TrainConfig:
 
 
 def train_config_to_saved_dict(cfg: TrainConfig, save_dir: Path | None = None) -> dict[str, Any]:
+    """Convert TrainConfig to a dict for saving in checkpoint JSON / pickled dict"""
     data = asdict(cfg)
     path_keys = ("train_csv", "val_csv", "test_csv", "model_dir")
     root = save_dir.resolve() if save_dir is not None else None
@@ -102,8 +111,10 @@ def train_config_to_saved_dict(cfg: TrainConfig, save_dir: Path | None = None) -
         val = data.get(path_key)
         if not isinstance(val, Path):
             continue
-
+        
         resolved = val.resolve()
+
+        # Try to make the path relative to save_dir if possible, to improve checkpoint portability
         if root is not None:
             try:
                 rel = resolved.relative_to(root)
@@ -120,8 +131,8 @@ def train_config_to_saved_dict(cfg: TrainConfig, save_dir: Path | None = None) -
         data["_path_meta"] = path_meta
     return data
 
-# Rebuild TrainConfig from checkpoint JSON / pickled dict (paths may be strings)
 def train_config_from_saved_dict(raw: dict[str, Any], load_dir: Path | None = None) -> TrainConfig:
+    """Convert a dict loaded from checkpoint back to TrainConfig, resolving paths based on metadata and load_dir"""
     base = asdict(TrainConfig())
     base.update(raw)
     path_meta = raw.get("_path_meta", {}) if isinstance(raw, dict) else {}

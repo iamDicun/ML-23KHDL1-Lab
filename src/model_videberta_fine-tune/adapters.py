@@ -1,3 +1,4 @@
+"""Adapter modules and utilities for injecting adapters into pretrained DebertaV2 layers"""
 from __future__ import annotations
 
 import torch
@@ -14,8 +15,8 @@ class BottleneckAdapter(nn.Module):
         self.up = nn.Linear(bottleneck_dim, hidden_size)
         self.reset_parameters()
 
-    def reset_parameters(self) -> None:  # ← thêm hàm này vào đây
-        nn.init.xavier_uniform_(self.down.weight)
+    def reset_parameters(self) -> None:
+        nn.init.xavier_uniform_(self.down.weight) # Xavier init for down-projection to encourage stable gradients
         nn.init.zeros_(self.down.bias)
         nn.init.zeros_(self.up.weight)
         nn.init.zeros_(self.up.bias)
@@ -73,7 +74,6 @@ class DebertaV2LayerWithAdapters(nn.Module):
         rel_embeddings=None,
         output_attentions: bool = False,
     ):
-        # Delegate to HF layer forward to keep internal behavior consistent.
         return self.base(
             hidden_states,
             attention_mask,
@@ -83,8 +83,8 @@ class DebertaV2LayerWithAdapters(nn.Module):
             output_attentions=output_attentions,
         )
 
-# Replace encoder layers with adapter-wrapped layers (preserves loaded weights in `base`)
 def inject_adapters_into_deberta(model: nn.Module, bottleneck_dim: int) -> None:
+    """Inject adapters into all layers of a DebertaV2Model in-place"""
     hidden_size = model.config.hidden_size
     new_layers = nn.ModuleList()
     for layer in model.encoder.layer:
@@ -93,17 +93,7 @@ def inject_adapters_into_deberta(model: nn.Module, bottleneck_dim: int) -> None:
 
 
 def freeze_backbone_except_adapters_and_layernorm(model: nn.Module) -> None:
-    """Freeze all backbone parameters, then selectively unfreeze adapters and encoder LayerNorms.
-
-    Freeze strategy (intentional design):
-      - Adapters (``.adapter.``): Always unfrozen — these are the primary trainable parameters.
-      - Encoder LayerNorms (``encoder.layer.*.LayerNorm``): Unfrozen to allow the model to
-        re-calibrate hidden-state distributions after adapter injection.
-      - Embedding LayerNorm (``embeddings.LayerNorm``): Kept **frozen** to preserve pretrained
-        token-level representations. Unfreezing embeddings would risk destabilizing the input
-        space, especially with small fine-tuning datasets.
-      - All other backbone weights (attention, FFN, embeddings): Frozen.
-    """
+    """Freeze all backbone parameters, then selectively unfreeze adapters and encoder LayerNorms"""
     for _, p in model.named_parameters():
         p.requires_grad = False
     for name, p in model.named_parameters():
@@ -116,15 +106,7 @@ def freeze_backbone_except_adapters_and_layernorm(model: nn.Module) -> None:
 
 
 def unfreeze_last_n_encoder_layers(model: nn.Module, n: int) -> int:
-    """Unfreeze **all** parameters in the last ``n`` ``encoder.layer`` blocks.
-
-    Call **after** :func:`freeze_backbone_except_adapters_and_layernorm`. Adapters and
-    LayerNorms in lower blocks remain trainable as before; this adds full attention/FFN
-    weights (and any other tensors) in the top ``n`` blocks.
-
-    Returns:
-        Number of blocks actually unfrozen (clamped to ``len(encoder.layer)``).
-    """
+    """Unfreeze all parameters in the last n encoder.layer blocks"""
     if n <= 0:
         return 0
     layers = model.encoder.layer

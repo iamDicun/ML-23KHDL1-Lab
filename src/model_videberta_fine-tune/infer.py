@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def _load_model(ckpt_path: Path):
-    """Load checkpoint, rebuild model, return (model, tokenizer, cfg, device)."""
+    """Load checkpoint, rebuild model, return (model, tokenizer, cfg, device)"""
     if not ckpt_path.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
@@ -68,7 +68,7 @@ def _load_model(ckpt_path: Path):
 
 
 def _predict_single(model, tokenizer, cfg, device, text: str) -> dict:
-    """Run inference on a single review text."""
+    """Run inference on a single review text"""
     enc = tokenizer(
         text,
         max_length=cfg.max_length,

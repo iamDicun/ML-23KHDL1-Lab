@@ -1,4 +1,4 @@
-"""Evaluate a saved checkpoint on the held-out test CSV."""
+"""Evaluate a saved checkpoint on the held-out test CSV"""
 
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    """Main evaluation function to load a checkpoint, run inference on the test set, and compute metrics"""
     # Parse command-line arguments for checkpoint path, test CSV path, and verbosity
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to best.pt")
@@ -79,11 +80,12 @@ def main() -> None:
     class_weights = payload.get("class_weights")
     model = ViDeBERTaAspectMSD(cfg, class_weights=class_weights).to(device)
 
-    # Filter out "class_weights" if it exists in old checkpoints (for backwards compatibility)
+    # Filter out "class_weights" if it exists in old checkpoints
     state_dict = payload["model_state_dict"]
     if "class_weights" in state_dict:
         state_dict = {k: v for k, v in state_dict.items() if k != "class_weights"}
 
+    # Load the model state dict, allowing for missing/unexpected keys (e.g. if the checkpoint was saved with DataParallel but we're loading without it, or vice versa), and log any such keys for debugging
     load_result = model.load_state_dict(state_dict, strict=False)
     if load_result.missing_keys:
         logger.warning(f"Missing keys in checkpoint: {load_result.missing_keys}")
@@ -93,6 +95,7 @@ def main() -> None:
     # Set the model to evaluation mode
     model.eval()
 
+    # Log the total number of parameters, number of trainable parameters, and estimated model size in megabytes
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     frozen_params = total_params - trainable_params
@@ -106,7 +109,7 @@ def main() -> None:
     all_logits = []
     all_labels = []
 
-    # Iterate over batches in the test DataLoader, move batch tensors to the configured device, and perform a forward pass through the model to get output logits. Collect all logits and labels for evaluation after processing all batches.
+    # Run inference on the test set without computing gradients, and measure the total inference time and time per sample
     infer_start = time.time()
     with torch.no_grad():
         for batch in test_loader:
@@ -119,13 +122,14 @@ def main() -> None:
     logger.info(f"\nInference time total: {infer_time:.2f}s")
     logger.info(f"Inference time per sample: {infer_time/n_samples*1000:.2f}ms")
 
+    # Concatenate all logits and labels from the batches, compute the predicted classes by taking the argmax of the logits
     logits = torch.cat(all_logits, dim=0)
     labels = torch.cat(all_labels, dim=0)
     preds = logits.argmax(dim=-1).numpy()
     y = labels.numpy()
     labels_range = list(range(cfg.num_classes_per_aspect))
 
-    # Calculate and print the macro-F1 score and accuracy for each aspect, as well as the mean macro-F1 score across all aspects. If verbosity is enabled, also print the classification report for each aspect.
+    # Calculate and print the macro-F1 score and accuracy for each aspect, as well as the mean macro-F1 score across all aspects
     logger.info("Per-aspect macro-F1 and accuracy:")
     f1_macros = []
     for a, name in enumerate(ASPECT_NAMES_EN):

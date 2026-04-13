@@ -1,4 +1,4 @@
-"""Train ViDeBERTa + adapters + multi-pool + MSD; checkpoint by validation macro-F1."""
+"""Train ViDeBERTa + adapters + multi-pool + MSD; checkpoint by validation macro-F1"""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from sklearn.metrics import f1_score
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
@@ -45,12 +46,13 @@ def set_seed(seed: int) -> None:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-# Assign macro f1 to avoid imbalance between aspects
 def macro_f1_from_logits(
     logits: torch.Tensor, labels: torch.Tensor, num_classes: int
 ) -> tuple[float, np.ndarray]:
+    """Calculate macro-F1 score from model logits and true labels"""
     # Get predicted class with highest logit for each aspect
     preds = logits.argmax(dim=-1).cpu().numpy()
+
     # Convert labels to numpy array
     y = labels.cpu().numpy()
     f1s = []
@@ -62,17 +64,15 @@ def macro_f1_from_logits(
     
     return float(np.mean(f1s)), np.array(f1s, dtype=np.float64)
 
-
-# ── Multi-GPU helpers ────────────────────────────────────────────────────
-
 def _unwrap_model(model: nn.Module) -> ViDeBERTaAspectMSD:
-    """Get the underlying ViDeBERTaAspectMSD from a DataParallel wrapper (or return as-is)."""
+    """Get the underlying ViDeBERTaAspectMSD from a DataParallel wrapper (or return as-is)"""
     if isinstance(model, nn.DataParallel):
         return model.module
     return model
 
 
 def _encoder_block_index(param_name: str) -> int | None:
+    """If the parameter name corresponds to an encoder.layer block, return its index as an integer; otherwise return None"""
     prefix = "encoder.layer."
     if not param_name.startswith(prefix):
         return None
@@ -81,12 +81,16 @@ def _encoder_block_index(param_name: str) -> int | None:
 
 
 def build_adamw_param_groups(model: ViDeBERTaAspectMSD, cfg: TrainConfig) -> list[dict[str, Any]]:
-    """Heads and lower-block adapters use ``learning_rate``; top-N encoder blocks use ``encoder_learning_rate``."""
+    """Heads and lower-block adapters use learning_rate; top-N encoder blocks use encoder_learning_rate"""
     backbone = model.backbone
     n_layers = len(backbone.encoder.layer)
     k = min(max(0, cfg.unfreeze_encoder_layers), n_layers)
     top_from = n_layers - k
 
+    # Separate parameters into three groups:
+        # backbone lower blocks: adapters and any unfrozen lower encoder blocks
+        # backbone top blocks: any unfrozen top encoder blocks
+        # aspect heads: all unfrozen parameters in the aspect heads
     backbone_lower: list[nn.Parameter] = []
     backbone_top: list[nn.Parameter] = []
     for name, p in backbone.named_parameters():
@@ -142,6 +146,7 @@ def _maybe_wrap_dp(model: ViDeBERTaAspectMSD, cfg: TrainConfig, device: torch.de
 
 @torch.no_grad()
 def evaluate_epoch(model: nn.Module, loader: DataLoader, device: torch.device, num_classes: int):
+    """Evaluate the model on the validation set and compute average loss and macro-F1 score across all aspects"""
     model.eval()
     total_loss = 0.0
     n_batches = 0
@@ -155,10 +160,13 @@ def evaluate_epoch(model: nn.Module, loader: DataLoader, device: torch.device, n
         out = model(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
-            labels=labels_batch,
         )
         logits = out["logits"]  # [B, 6, C]
-        loss = out["loss"]
+        b, a, c = logits.shape
+        loss = F.cross_entropy(
+            logits.reshape(b * a, c),
+            labels_batch.reshape(b * a).long()
+        )
         if loss is None:
             raise RuntimeError("Expected validation loss when labels are provided")
         # DataParallel returns per-replica losses; average them.
@@ -179,6 +187,7 @@ def evaluate_epoch(model: nn.Module, loader: DataLoader, device: torch.device, n
 
 
 def train() -> None:
+    """Main training loop for ViDeBERTaAspectMSD with adapters, multi-pool, and MSD branches"""
     # Configure training 
     parser = argparse.ArgumentParser()
     parser.add_argument("--train-csv", type=str, default=None)
@@ -292,6 +301,7 @@ def train() -> None:
         **loader_kwargs,
     )
 
+    # Compute class weights for each aspect to address class imbalance, and log them
     class_weights = compute_class_weights(train_df, ASPECT_LABEL_COLUMNS, cfg.num_classes_per_aspect)
     logger.info("Class weights:")
     for name, w in zip(ASPECT_NAMES_EN, class_weights):
@@ -300,15 +310,17 @@ def train() -> None:
     # Initialize the model and setup device
     base_model = ViDeBERTaAspectMSD(cfg, class_weights=class_weights).to(device)
 
-    # Wrap in DataParallel if multiple GPUs available (keeps reference to base for saving)
+    # Wrap in DataParallel if multiple GPUs available
     model = _maybe_wrap_dp(base_model, cfg, device)
 
+    # Build AdamW optimizer with separate parameter groups for backbone and heads, and log the number of trainable parameters and learning rates
     param_groups = build_adamw_param_groups(base_model, cfg)
     opt = AdamW(param_groups)
     trainable: list[nn.Parameter] = []
     for g in param_groups:
         trainable.extend(g["params"])
 
+    # Log the number of trainable parameters and learning rates for different groups
     n_trainable = sum(p.numel() for p in trainable)
     logger.info(f"Trainable parameters: {n_trainable:,}")
     if cfg.unfreeze_encoder_layers > 0:
@@ -357,7 +369,7 @@ def train() -> None:
                 out = model(**batch)
                 loss = out["loss"]
 
-            # DataParallel returns per-replica losses; average them to get a single scalar.
+            # DataParallel returns per-replica losses; average them to get a single scalar
             if loss.dim() > 0:
                 loss = loss.mean()
 
@@ -378,18 +390,18 @@ def train() -> None:
 
             pbar.set_postfix(loss=f"{running / n_steps:.4f}")
         
+        # End of epoch: calculate average training loss and time taken, and log them
         epoch_time = time.time() - epoch_start
         avg_train_loss = running / max(n_steps, 1)
         logger.info(f"epoch {epoch+1} train_loss={avg_train_loss:.4f} time={epoch_time:.1f}s ({epoch_time/60:.1f}min)")
 
-        # After each epoch, evaluate the model on the validation set and calculate macro-F1 score
         val_loss, macro, per_f1 = evaluate_epoch(model, val_loader, device, cfg.num_classes_per_aspect)
         logger.info(f"val loss={val_loss:.4f} macro-F1={macro:.4f}")
         for name, f1 in zip(ASPECT_NAMES_EN, per_f1):
             logger.info(f"  {name}: {f1:.4f}")
 
-        # If the validation macro-F1 score is the best seen so far, save a checkpoint of the model state and training configuration.
-        # Always save the unwrapped (base) model state dict so checkpoints are DataParallel-agnostic.
+        # If the validation macro-F1 score is the best seen so far, save a checkpoint of the model state and training configuration
+        # Always save the unwrapped (base) model state dict so checkpoints are DataParallel-agnostic
         if macro > best_macro:
             best_macro = macro
             patience_counter = 0
