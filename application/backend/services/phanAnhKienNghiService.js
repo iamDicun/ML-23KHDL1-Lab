@@ -157,14 +157,15 @@ export const PhanAnhKienNghiService = {
     }
   },
 
-  traCuuPhanAnh: async ({ q, soDienThoai, limit }) => {
+  traCuuPhanAnh: async ({ q, soDienThoai, limit, submitterUserId }) => {
     const keyword = cleanText(q)
     const phone = cleanText(soDienThoai)
 
     const rows = await PhanAnhKienNghiDbModel.searchPetitions({
       keyword,
       phone,
-      limit
+      limit,
+      submitterUserId: submitterUserId || null
     })
 
     const items = rows.map(mapPetitionRow)

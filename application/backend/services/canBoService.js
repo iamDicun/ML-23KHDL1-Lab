@@ -42,18 +42,13 @@ const DOCUMENT_CATEGORY_MAP = {
 
 const AI_ASPECTS = ['hygiene', 'food', 'hotel', 'location', 'room', 'service']
 
-const SCORE_TYPES = {
-  hygiene: 'hygiene',
-  service: 'service',
-  facility: 'facility',
-  friendliness: 'friendliness'
-}
-
 const ATTRIBUTE_LABELS = {
   hygiene: 'Vệ sinh',
-  service: 'Dịch vụ',
-  facility: 'Cơ sở vật chất',
-  friendliness: 'Mức độ thân thiện'
+  food: 'Đồ ăn',
+  hotel: 'Khách sạn',
+  location: 'Vị trí',
+  room: 'Phòng ốc',
+  service: 'Dịch vụ'
 }
 
 const DEPLOYED_ASPECT_ALIASES = {
@@ -402,7 +397,7 @@ export const CanBoService = {
     }
   },
 
-  getThongKeAiTheoCoSo: async ({ coSoId, businessId, fromDate, toDate }) => {
+  getThongKeAiTheoCoSo: async ({ coSoId, businessId, fromDate, toDate, officialUserId }) => {
     const normalizedHotelId = Number(coSoId ?? businessId)
     if (!Number.isInteger(normalizedHotelId) || normalizedHotelId <= 0) {
       const err = new Error('ID cơ sở không hợp lệ')
@@ -561,35 +556,28 @@ export const CanBoService = {
     }, {})
 
     const scores = {
-      [SCORE_TYPES.hygiene]: normalizeScore(average([aspectAverages.hygiene.score, aspectAverages.room.score])),
-      [SCORE_TYPES.service]: normalizeScore(average([aspectAverages.service.score, aspectAverages.food.score])),
-      [SCORE_TYPES.facility]: normalizeScore(average([aspectAverages.hotel.score, aspectAverages.location.score, aspectAverages.room.score])),
-      [SCORE_TYPES.friendliness]: normalizeScore(aspectAverages.service.score)
+      hygiene: aspectAverages.hygiene.score,
+      food: aspectAverages.food.score,
+      hotel: aspectAverages.hotel.score,
+      location: aspectAverages.location.score,
+      room: aspectAverages.room.score,
+      service: aspectAverages.service.score
     }
 
     const totalPositive = AI_ASPECTS.reduce((sum, aspect) => sum + aspectAverages[aspect].positive, 0)
     const totalNegative = AI_ASPECTS.reduce((sum, aspect) => sum + aspectAverages[aspect].negative, 0)
     const sentimentLabel = deriveSentimentLabel({ totalPositive, totalNegative })
 
-    const scoreEntries = [
-      { scoreType: SCORE_TYPES.hygiene, scoreValue: scores[SCORE_TYPES.hygiene] },
-      { scoreType: SCORE_TYPES.service, scoreValue: scores[SCORE_TYPES.service] },
-      { scoreType: SCORE_TYPES.facility, scoreValue: scores[SCORE_TYPES.facility] },
-      { scoreType: SCORE_TYPES.friendliness, scoreValue: scores[SCORE_TYPES.friendliness] }
-    ]
+    const scoreEntries = AI_ASPECTS.map((aspect) => ({
+      scoreType: aspect,
+      scoreValue: scores[aspect]
+    }))
 
     const [worstAttribute] = scoreEntries
       .slice()
       .sort((a, b) => a.scoreValue - b.scoreValue)
 
-    const attributeToAspects = {
-      [SCORE_TYPES.hygiene]: ['hygiene', 'room'],
-      [SCORE_TYPES.service]: ['service', 'food'],
-      [SCORE_TYPES.facility]: ['hotel', 'location', 'room'],
-      [SCORE_TYPES.friendliness]: ['service']
-    }
-
-    const focusAspects = attributeToAspects[worstAttribute.scoreType]
+    const focusAspects = [worstAttribute.scoreType]
     const rankedNegativeReviews = usableReviews
       .map((review, index) => {
         const prediction = perReviewPredictions[index]
@@ -629,10 +617,12 @@ export const CanBoService = {
     try {
       aiPredictionRow = await CanBoDbModel.upsertHotelAiPrediction({
         hotelId: normalizedHotelId,
-        hygieneScore: scores[SCORE_TYPES.hygiene],
-        serviceScore: scores[SCORE_TYPES.service],
-        facilityScore: scores[SCORE_TYPES.facility],
-        friendlinessScore: scores[SCORE_TYPES.friendliness],
+        hygieneScore: scores.hygiene,
+        foodScore: scores.food,
+        hotelScore: scores.hotel,
+        locationScore: scores.location,
+        roomScore: scores.room,
+        serviceScore: scores.service,
         sentimentLabel
       })
 
@@ -644,6 +634,18 @@ export const CanBoService = {
         topNegativeKeywords,
         representativeReviews: representativeReviewsText
       })
+
+      const redAspects = AI_ASPECTS.filter((aspect) => scores[aspect] < 0.45)
+      if (redAspects.length >= 2 && officialUserId) {
+        await CanBoDbModel.createOfficialDailyTask({
+          officialUserId: officialUserId,
+          title: `Cảnh báo chất lượng cơ sở: ${hotel.name}`,
+          description: `Có ${redAspects.length} thuộc tính bị AI chấm dưới mức an toàn: ${redAspects.map(a => ATTRIBUTE_LABELS[a]).join(', ')}. Cần thanh tra gấp.`,
+          priority: 'high',
+          sourceType: 'ai_alert',
+          sourceId: hotel.id
+        }).catch(err => console.error("Lỗi tạo task cảnh báo:", err))
+      }
     } catch (error) {
       if (error?.code === '42P01') {
         throw createMissingHotelTablesError()
@@ -675,10 +677,12 @@ export const CanBoService = {
         sentimentLabel,
         diemTongQuan: round(overallScore, 4),
         diemThanhPhan: {
-          hygiene: round(scores[SCORE_TYPES.hygiene], 4),
-          service: round(scores[SCORE_TYPES.service], 4),
-          facility: round(scores[SCORE_TYPES.facility], 4),
-          friendliness: round(scores[SCORE_TYPES.friendliness], 4)
+          hygiene: round(scores.hygiene, 4),
+          food: round(scores.food, 4),
+          hotel: round(scores.hotel, 4),
+          location: round(scores.location, 4),
+          room: round(scores.room, 4),
+          service: round(scores.service, 4)
         },
         chiTietAspect: AI_ASPECTS.reduce((acc, aspect) => {
           acc[aspect] = {
@@ -731,6 +735,39 @@ export const CanBoService = {
     const hoSo = await CanBoDbModel.findRegistrationRequestById(Number(id))
     if (!hoSo) {
       const err = new Error('Không tìm thấy hồ sơ'); err.statusCode = 404; throw err
+    }
+
+    // --- Tự động tạo bản ghi cơ sở kinh doanh khi hồ sơ được phê duyệt ---
+    if (normalizedStatus === 'approved') {
+      try {
+        const data = hoSo.data || {}
+        const hotelName = (
+          data.tenCoSoKinhDoanh ||
+          data.tenCoSo ||
+          data.business_name ||
+          data.name ||
+          hoSo.business_name ||
+          'Cơ sở kinh doanh'
+        )
+        const address = (
+          data.diaChiDangKy ||
+          data.diaChi ||
+          data.address ||
+          hoSo.business_address ||
+          null
+        )
+        const province = data.tinhThanh || data.province || 'Chưa cập nhật'
+
+        await CanBoDbModel.upsertApprovedBusiness({
+          registrationRequestId: Number(id),
+          hotelName,
+          address,
+          province
+        })
+      } catch (businessErr) {
+        // Không throw — việc tạo cơ sở thất bại không nên rollback việc cập nhật trạng thái
+        console.error('[xuLyHoSo] Failed to auto-create business record:', businessErr?.message)
+      }
     }
 
     return {
@@ -867,6 +904,113 @@ export const CanBoService = {
         enabled: true,
         label: 'AI dự đoán xu hướng theo từng khách sạn (đã tích hợp)'
       }
+    }
+  },
+
+  testAiModel: async (rawText, rating) => {
+    if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
+      const err = new Error('Vui lòng nhập nội dung review để chạy mô hình.')
+      err.statusCode = 400
+      throw err
+    }
+
+    // --- Bước 1: Tiền xử lý văn bản (mô phỏng pipeline Python) ---
+    // Pipeline Python: lowercase → clean → normalize teencode → VnCoreNLP word_segment (dùng _ cho từ ghép)
+    // Ở đây JS mô phỏng bước word_segment bằng cách ghép các cụm từ ghép thường gặp thành token_underscore
+
+    const COMPOUND_WORDS = [
+      // Sắp xếp từ dài → ngắn để ưu tiên match cụm dài hơn
+      ['vệ sinh an toàn', 'vệ_sinh_an_toàn'],
+      ['check in', 'check_in'], ['check out', 'check_out'],
+      ['nhân viên', 'nhân_viên'], ['phục vụ', 'phục_vụ'],
+      ['khách sạn', 'khách_sạn'], ['nhà hàng', 'nhà_hàng'],
+      ['phòng ốc', 'phòng_ốc'], ['vị trí', 'vị_trí'],
+      ['đồ ăn', 'đồ_ăn'], ['thức ăn', 'thức_ăn'], ['ăn uống', 'ăn_uống'],
+      ['đặt phòng', 'đặt_phòng'], ['nhận phòng', 'nhận_phòng'], ['trả phòng', 'trả_phòng'],
+      ['vệ sinh', 'vệ_sinh'], ['sạch sẽ', 'sạch_sẽ'], ['tiện nghi', 'tiện_nghi'],
+      ['hồ bơi', 'hồ_bơi'], ['bãi biển', 'bãi_biển'], ['bài đỗ xe', 'bãi_đỗ_xe'],
+      ['ăn sáng', 'ăn_sáng'], ['bữa sáng', 'bữa_sáng'], ['bữa ăn', 'bữa_ăn'],
+      ['dịch vụ', 'dịch_vụ'], ['cơ sở', 'cơ_sở'], ['trang thiết bị', 'trang_thiết_bị'],
+      ['wifi', 'wifi'], ['điều hoà', 'điều_hoà'],
+      ['không gian', 'không_gian'], ['thời gian', 'thời_gian'],
+      ['bình thường', 'bình_thường'], ['ok', 'ok']
+    ]
+
+    let processedText = normalizeModelInputText(rawText).toLowerCase()
+
+    // Thay thế các cụm từ ghép thành token underscore (mô phỏng VnCoreNLP wseg)
+    for (const [phrase, token] of COMPOUND_WORDS) {
+      // Escape regex metacharacters trong phrase
+      const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      processedText = processedText.replace(new RegExp(escaped, 'g'), token)
+    }
+
+    // Xoá ký tự đặc biệt nhưng GIỮ _ (underscore dùng cho từ ghép đã segment)
+    processedText = processedText
+      .replace(/[!"#$%&'()*+,\-./:;<=>?@[\\\]^`{|}~]/g, ' ')  // không include _
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    // --- Bước 2: Gọi AI model ---
+    const endpointUrl = buildAiEndpointUrl()
+    let rawPredictions = null
+
+    try {
+      const response = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texts: [processedText] }),
+        signal: AbortSignal.timeout(30000)
+      })
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => response.statusText)
+        const err = new Error(`AI endpoint error: ${response.status} – ${errText}`)
+        err.statusCode = 502
+        throw err
+      }
+
+      const aiPayload = await response.json()
+      const predictions = Array.isArray(aiPayload?.predictions) ? aiPayload.predictions : null
+
+      if (predictions && predictions.length > 0) {
+        rawPredictions = normalizeAiResponseRow(predictions[0] || {})
+      }
+    } catch (fetchErr) {
+      if (fetchErr.statusCode) throw fetchErr
+      const err = new Error(`Không kết nối được tới AI model: ${fetchErr.message}`)
+      err.statusCode = 503
+      throw err
+    }
+
+    // --- Bước 3: Tính điểm ---
+    const aspects = {}
+    for (const aspect of AI_ASPECTS) {
+      const { prediction, confidence } = rawPredictions?.[aspect] ?? { prediction: 0, confidence: 0 }
+      aspects[aspect] = {
+        label: ATTRIBUTE_LABELS[aspect],
+        prediction,
+        bucket: classToBucket(prediction),
+        score: classToScore(prediction),
+        confidence: round(confidence, 3)
+      }
+    }
+
+    const allScores = AI_ASPECTS.map((a) => classToScore(rawPredictions?.[a]?.prediction ?? 0))
+    const overallScore = round(average(allScores), 4)
+
+    const posCount = AI_ASPECTS.filter((a) => classToBucket(rawPredictions?.[a]?.prediction) === 'positive').length
+    const negCount = AI_ASPECTS.filter((a) => classToBucket(rawPredictions?.[a]?.prediction) === 'negative').length
+    const sentimentLabel = posCount > negCount ? 'positive' : negCount > posCount ? 'negative' : 'neutral'
+
+    return {
+      originalText: rawText,
+      processedText,
+      rating: Number(rating) || null,
+      aspects,
+      overallScore,
+      sentimentLabel,
+      aiEndpoint: endpointUrl
     }
   }
 }

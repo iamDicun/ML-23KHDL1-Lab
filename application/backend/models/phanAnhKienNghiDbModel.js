@@ -88,8 +88,10 @@ export const PhanAnhKienNghiDbModel = {
     return result.rows[0]
   },
 
-  searchPetitions: async ({ keyword, phone, limit }) => {
+  searchPetitions: async ({ keyword, phone, limit, submitterUserId }) => {
     const safeLimit = Number(limit) > 0 ? Math.min(Number(limit), 100) : 50
+    // Use a larger fetch limit to allow service-level filtering by submitterUserId
+    const fetchLimit = submitterUserId ? 200 : safeLimit
 
     const result = await runQuery(
       `SELECT
@@ -123,7 +125,7 @@ export const PhanAnhKienNghiDbModel = {
        AND ($2::TEXT IS NULL OR phone ILIKE '%' || $2 || '%')
        ORDER BY received_at DESC, id DESC
        LIMIT $3`,
-      [keyword || null, phone || null, safeLimit]
+      [keyword || null, phone || null, fetchLimit]
     )
 
     return result.rows

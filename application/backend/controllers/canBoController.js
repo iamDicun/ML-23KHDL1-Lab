@@ -65,7 +65,16 @@ export const CanBoController = {
     try {
       const { coSoId } = req.params
       const { fromDate, toDate } = req.query
-      const result = await CanBoService.getThongKeAiTheoCoSo({ coSoId, fromDate, toDate })
+      const result = await CanBoService.getThongKeAiTheoCoSo({ coSoId, fromDate, toDate, officialUserId: req.user.userId })
+      res.json(result)
+    } catch (err) { next(err) }
+  },
+
+  // POST /can-bo/ai-test
+  testAiModel: async (req, res, next) => {
+    try {
+      const { text, rating } = req.body
+      const result = await CanBoService.testAiModel(text, rating)
       res.json(result)
     } catch (err) { next(err) }
   },

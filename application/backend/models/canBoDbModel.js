@@ -54,10 +54,7 @@ export const CanBoDbModel = {
          h.imported_at AS created_at,
          'Khách sạn'::TEXT AS business_type,
          NULL::TEXT AS owner_name,
-         NULL::TEXT AS owner_phone,
-         h.total_reviews_in_output_results,
-         h.removed_reviews_in_step2,
-         h.kept_reviews_in_step2
+         NULL::TEXT AS owner_phone
        FROM ai_reuse_hotels h
        ORDER BY h.imported_at DESC, h.id DESC
        LIMIT $1`,
@@ -81,10 +78,7 @@ export const CanBoDbModel = {
          h.imported_at AS created_at,
          'Khách sạn'::TEXT AS business_type,
          NULL::TEXT AS owner_name,
-         NULL::TEXT AS owner_phone,
-         h.total_reviews_in_output_results,
-         h.removed_reviews_in_step2,
-         h.kept_reviews_in_step2
+         NULL::TEXT AS owner_phone
        FROM ai_reuse_hotels h
        WHERE h.id = $1
        LIMIT 1`,
@@ -99,6 +93,23 @@ export const CanBoDbModel = {
       'SELECT COUNT(*)::INTEGER AS count FROM ai_reuse_hotels'
     )
     return Number(result.rows[0]?.count || 0)
+  },
+
+  // Tạo/cập nhật bản ghi cơ sở từ hồ sơ đã được phê duyệt
+  upsertApprovedBusiness: async ({ registrationRequestId, hotelName, address, province }) => {
+    // Dùng source_hotel_id âm (âm của registrationRequestId) để tránh xung đột với dữ liệu hotel AI thực
+    const sourceId = -(registrationRequestId)
+    const displayName = String(hotelName || 'Cơ sở kinh doanh')
+    const result = await query(
+      `INSERT INTO ai_reuse_hotels (source_hotel_id, hotel_name)
+       VALUES ($1, $2)
+       ON CONFLICT (source_hotel_id) DO UPDATE SET
+         hotel_name = EXCLUDED.hotel_name,
+         updated_at = NOW()
+       RETURNING id`,
+      [sourceId, displayName]
+    )
+    return result.rows[0] || null
   },
 
   findRegistrationRequests: async ({ status = null, limit = 30 } = {}) => {
@@ -211,6 +222,17 @@ export const CanBoDbModel = {
     )
 
     return result.rows
+  },
+
+  createOfficialDailyTask: async ({ officialUserId, title, description, priority = 'medium', sourceType = null, sourceId = null, dueDate }) => {
+    const result = await query(
+      `INSERT INTO official_daily_tasks 
+       (official_user_id, task_title, task_description, priority, source_type, source_id, due_date, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+       RETURNING id`,
+      [Number(officialUserId), title, description, priority, sourceType, sourceId, dueDate || new Date().toISOString().split('T')[0]]
+    )
+    return result.rows[0]
   },
 
   findOfficialDocuments: async (limit = 20) => {
@@ -330,37 +352,45 @@ export const CanBoDbModel = {
   upsertHotelAiPrediction: async ({
     hotelId,
     hygieneScore,
+    foodScore,
+    hotelScore,
+    locationScore,
+    roomScore,
     serviceScore,
-    facilityScore,
-    friendlinessScore,
     sentimentLabel
   }) => {
     const result = await query(
       `INSERT INTO hotel_ai_predictions (
          hotel_id,
          hygiene_score,
+         food_score,
+         hotel_score,
+         location_score,
+         room_score,
          service_score,
-         facility_score,
-         friendliness_score,
          sentiment_label,
          last_evaluated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
        ON CONFLICT (hotel_id)
        DO UPDATE SET
          hygiene_score = EXCLUDED.hygiene_score,
+         food_score = EXCLUDED.food_score,
+         hotel_score = EXCLUDED.hotel_score,
+         location_score = EXCLUDED.location_score,
+         room_score = EXCLUDED.room_score,
          service_score = EXCLUDED.service_score,
-         facility_score = EXCLUDED.facility_score,
-         friendliness_score = EXCLUDED.friendliness_score,
          sentiment_label = EXCLUDED.sentiment_label,
          last_evaluated_at = NOW()
-       RETURNING id, hotel_id, hygiene_score, service_score, facility_score, friendliness_score, sentiment_label, last_evaluated_at`,
+       RETURNING id, hotel_id, hygiene_score, food_score, hotel_score, location_score, room_score, service_score, sentiment_label, last_evaluated_at`,
       [
         Number(hotelId),
         hygieneScore,
+        foodScore,
+        hotelScore,
+        locationScore,
+        roomScore,
         serviceScore,
-        facilityScore,
-        friendlinessScore,
         sentimentLabel
       ]
     )

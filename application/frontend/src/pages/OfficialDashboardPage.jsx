@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
+import AiTestWidget from '../components/AiTestWidget'
 import { apiClient } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -96,9 +97,11 @@ const formatAiScore = (value) => {
 
 const AI_COMPONENT_META = {
   hygiene: { label: 'Vệ sinh' },
-  service: { label: 'Dịch vụ' },
-  facility: { label: 'Cơ sở vật chất' },
-  friendliness: { label: 'Thân thiện' }
+  food: { label: 'Đồ ăn' },
+  hotel: { label: 'Khách sạn' },
+  location: { label: 'Vị trí' },
+  room: { label: 'Phòng ốc' },
+  service: { label: 'Dịch vụ' }
 }
 
 const clampAiScore = (value) => {
@@ -158,91 +161,7 @@ const getAiSentimentMeta = (sentimentLabel) => {
   }
 }
 
-const getAiWarningMeta = (level) => {
-  if (level === 'high') {
-    return {
-      tone: 'border-red-200 bg-red-50 text-red-800',
-      chip: 'Mức cao'
-    }
-  }
 
-  if (level === 'medium') {
-    return {
-      tone: 'border-amber-200 bg-amber-50 text-amber-800',
-      chip: 'Mức trung bình'
-    }
-  }
-
-  return {
-    tone: 'border-blue-200 bg-blue-50 text-blue-800',
-    chip: 'Thông tin bổ sung'
-  }
-}
-
-const buildAiWarnings = (aiData) => {
-  if (!aiData?.ketQuaAi) return []
-
-  const warnings = []
-  const pushWarning = (level, title, detail) => {
-    warnings.push({
-      id: `${level}-${title}-${warnings.length}`,
-      level,
-      title,
-      detail
-    })
-  }
-
-  const inputData = aiData?.duLieuDauVao || {}
-  const resultData = aiData?.ketQuaAi || {}
-
-  const validReviewCount = Number(inputData?.tongReviewHopLeChoModel || 0)
-  const processedReviewCount = Number(inputData?.tongReviewDaTienXuLySuDungChoModel || 0)
-  const overallScore = clampAiScore(resultData?.diemTongQuan)
-
-  if (overallScore < 0.45) {
-    pushWarning('high', 'Điểm AI tổng quan thấp', 'Cơ sở đang có xu hướng phản hồi tiêu cực, cần kiểm tra thực địa sớm.')
-  } else if (overallScore < 0.65) {
-    pushWarning('medium', 'Điểm AI tổng quan ở mức cảnh báo', 'Nên theo dõi sát thêm trong kỳ tiếp theo để tránh giảm chất lượng dịch vụ.')
-  }
-
-  if (validReviewCount < 3) {
-    pushWarning('high', 'Dữ liệu đánh giá quá ít', 'Số review hợp lệ cho AI còn thấp, kết quả có thể chưa phản ánh đầy đủ thực trạng.')
-  } else if (validReviewCount < 8) {
-    pushWarning('medium', 'Dữ liệu đánh giá còn mỏng', 'Nên thu thập thêm phản hồi trước khi đưa ra quyết định xử lý lớn.')
-  }
-
-  if (processedReviewCount < validReviewCount) {
-    pushWarning('medium', 'Một phần review chưa được tiền xử lý', 'Kết quả AI hiện tại có thể chịu nhiễu ngôn ngữ trong một số bình luận.')
-  }
-
-  const sentiment = String(resultData?.sentimentLabel || '').trim().toLowerCase()
-  if (sentiment === 'negative') {
-    pushWarning('high', 'Sentiment tổng thể đang tiêu cực', 'Ưu tiên kiểm tra nhóm yếu tố bị chấm thấp và phản hồi từ người dân.')
-  } else if (sentiment === 'neutral') {
-    pushWarning('medium', 'Sentiment tổng thể trung tính', 'Cần theo dõi thêm vì trải nghiệm khách hàng chưa thực sự tích cực.')
-  }
-
-  const componentScores = resultData?.diemThanhPhan || {}
-  Object.entries(AI_COMPONENT_META).forEach(([key, meta]) => {
-    const score = clampAiScore(componentScores?.[key])
-    if (score < 0.45) {
-      pushWarning('high', `${meta.label} ở mức thấp`, `Thuộc tính ${meta.label.toLowerCase()} cần được ưu tiên cải thiện trong kế hoạch xử lý.`)
-    }
-  })
-
-  const negativeKeywords = Array.isArray(resultData?.insight?.topTuKhoaTieuCuc)
-    ? resultData.insight.topTuKhoaTieuCuc
-    : []
-
-  if (negativeKeywords.length >= 5) {
-    pushWarning('info', 'Có nhiều từ khóa tiêu cực lặp lại', 'Nên đối chiếu cụm từ tiêu cực với quy trình vận hành để tìm nguyên nhân gốc.')
-  }
-
-  const levelPriority = { high: 0, medium: 1, info: 2 }
-  return warnings
-    .sort((a, b) => (levelPriority[a.level] ?? 9) - (levelPriority[b.level] ?? 9))
-    .slice(0, 6)
-}
 
 const formatRatingStars = (value) => {
   const normalized = Math.max(0, Math.min(5, Number(value) || 0))
@@ -295,8 +214,7 @@ export default function OfficialDashboardPage() {
   const [aiModal, setAiModal] = useState({
     open: false,
     businessName: '',
-    payload: null,
-    warnings: []
+    payload: null
   })
 
   const rawSection = useMemo(() => new URLSearchParams(location.search).get('section'), [location.search])
@@ -438,8 +356,7 @@ export default function OfficialDashboardPage() {
     setAiModal({
       open: true,
       businessName: payload?.coSo?.tenCoSo || fallbackBusinessName || 'Chưa xác định cơ sở',
-      payload,
-      warnings: buildAiWarnings(payload)
+      payload
     })
   }
 
@@ -463,16 +380,12 @@ export default function OfficialDashboardPage() {
       const queryString = query.toString()
       const endpoint = `/can-bo/co-so/${businessId}/thong-ke-ai${queryString ? `?${queryString}` : ''}`
       const data = await apiClient.get(endpoint)
-      const warnings = buildAiWarnings(data)
-
       setAiStatsByBusiness((prev) => ({
         ...prev,
         [businessId]: data
       }))
 
-      setAiStatsNotice(
-        `Đã thống kê AI cho cơ sở "${data?.coSo?.tenCoSo || business.name}". Có ${warnings.length} cảnh báo cần theo dõi.`
-      )
+      setAiStatsNotice(`Đã cập nhật thống kê AI cho cơ sở "${data?.coSo?.tenCoSo || business.name}".`)
 
       openAiReportModal(data, business.name)
     } catch (error) {
@@ -499,6 +412,7 @@ export default function OfficialDashboardPage() {
     : []
 
   return (
+    <>
     <div className="min-h-screen bg-[#f5f6fa]">
       <Navbar />
 
@@ -642,15 +556,15 @@ export default function OfficialDashboardPage() {
               {dashboard.businesses.length === 0 ? (
                 <p className="text-sm text-gray-500">Chưa có cơ sở kinh doanh nào để thống kê.</p>
               ) : (
-                <div className="overflow-x-auto rounded-md border border-gray-200">
+                <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm bg-white">
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
                     <thead className="bg-[#f9efe9]">
                       <tr>
-                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Cơ sở</th>
-                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Địa chỉ</th>
-                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Trạng thái</th>
-                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Thao tác</th>
-                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Kết quả tổng hợp</th>
+                        <th className="px-4 py-3 text-left font-semibold text-[#6f2a11] whitespace-nowrap min-w-[200px] w-1/4">Cơ sở</th>
+                        <th className="px-4 py-3 text-left font-semibold text-[#6f2a11] min-w-[250px] w-[30%]">Địa chỉ</th>
+                        <th className="px-4 py-3 text-left font-semibold text-[#6f2a11] min-w-[160px] w-[15%]">Trạng thái</th>
+                        <th className="px-4 py-3 text-left font-semibold text-[#6f2a11] min-w-[160px] w-[10%]">Thao tác</th>
+                        <th className="px-4 py-3 text-left font-semibold text-[#6f2a11] min-w-[280px] w-1/5">Kết quả tổng hợp</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
@@ -658,93 +572,95 @@ export default function OfficialDashboardPage() {
                         const statsData = reviewStatsByBusiness[biz.id]?.thongKeReview
                         const aiStatsPayload = aiStatsByBusiness[biz.id]
                         const aiStatsData = aiStatsPayload?.ketQuaAi
-                        const aiWarnings = aiStatsPayload ? buildAiWarnings(aiStatsPayload) : []
                         const aiSentimentMeta = getAiSentimentMeta(aiStatsData?.sentimentLabel)
                         const aiScoreMeta = getAiScoreMeta(aiStatsData?.diemTongQuan)
 
                         return (
-                          <tr key={biz.id}>
-                            <td className="px-3 py-3 align-top">
-                              <p className="font-semibold text-gray-900">{biz.name}</p>
+                          <tr key={biz.id} className="hover:bg-[#fdf0e8]/40 transition-colors duration-200 group">
+                            <td className="px-4 py-4 align-top">
+                              <p className="font-semibold text-gray-900 max-w-[150px] md:max-w-[250px] truncate group-hover:text-[#8B2500] transition-colors cursor-default" title={biz.name}>{biz.name}</p>
                               <p className="text-xs text-gray-500 mt-1">{biz.business_type}</p>
                             </td>
-                            <td className="px-3 py-3 align-top text-gray-700">{biz.address || 'Chưa cập nhật'}</td>
-                            <td className="px-3 py-3 align-top">
-                              <span className="inline-flex text-xs rounded border border-gray-200 bg-gray-50 px-2 py-1 text-gray-700">
+                            <td className="px-4 py-4 align-top text-gray-700 leading-relaxed">
+                              {biz.address || 'Chưa cập nhật'}
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                              <span className="inline-flex items-center text-xs font-medium rounded-full border border-gray-200 bg-white px-2.5 py-1 text-gray-700 shadow-sm">
+                                <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${biz.status === 'active' ? 'bg-emerald-500' :
+                                    biz.status === 'suspended' ? 'bg-amber-500' :
+                                      biz.status === 'under_inspection' ? 'bg-blue-500' :
+                                        'bg-gray-400'
+                                  }`}></span>
                                 {businessStatusLabel(biz.status)}
                               </span>
                             </td>
-                            <td className="px-3 py-3 align-top">
-                              <div className="flex flex-wrap gap-2">
+                            <td className="px-4 py-4 align-top">
+                              <div className="flex flex-col gap-2.5">
                                 <button
                                   type="button"
                                   onClick={() => handleViewReviewStats(biz)}
                                   disabled={reviewStatsLoadingBusinessId === biz.id}
-                                  className="px-3 py-1.5 rounded border border-[#8B2500] text-[#8B2500] hover:bg-[#8B2500] hover:text-white disabled:opacity-60"
+                                  className="w-full text-center px-3 py-1.5 rounded-md border border-[#8B2500] text-[#8B2500] font-medium hover:bg-[#8B2500] hover:text-white hover:shadow transition-all duration-200 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-[#8B2500] disabled:hover:shadow-none"
                                 >
-                                  {reviewStatsLoadingBusinessId === biz.id ? 'Đang tải...' : 'Xem số lượt review'}
+                                  {reviewStatsLoadingBusinessId === biz.id ? 'Đang tải...' : 'Xem số review'}
                                 </button>
 
                                 <button
                                   type="button"
                                   onClick={() => handleViewAiStats(biz)}
                                   disabled={aiStatsLoadingBusinessId === biz.id}
-                                  className="px-3 py-1.5 rounded border border-amber-400 text-amber-700 hover:bg-amber-400 hover:text-white disabled:opacity-60"
+                                  className="w-full text-center px-3 py-1.5 rounded-md border border-amber-500 text-amber-700 font-medium hover:bg-amber-500 hover:text-white hover:shadow transition-all duration-200 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-amber-700 disabled:hover:shadow-none"
                                 >
-                                  {aiStatsLoadingBusinessId === biz.id ? 'Đang phân tích...' : aiStatsData ? 'Phân tích lại AI' : 'Thống kê bằng AI'}
+                                  {aiStatsLoadingBusinessId === biz.id ? 'Đang tải...' : aiStatsData ? 'Phân tích lại AI' : 'Thống kê AI'}
                                 </button>
                               </div>
                             </td>
-                            <td className="px-3 py-3 align-top">
-                              <div className="space-y-2 text-xs text-gray-700 min-w-[280px]">
+                            <td className="px-4 py-4 align-top">
+                              <div className="space-y-3 text-xs text-gray-700 w-full min-w-[280px]">
                                 {statsData ? (
-                                  <div className="space-y-1 rounded border border-gray-200 bg-gray-50 p-2">
+                                  <div className="space-y-1.5 rounded-md border border-gray-200 bg-gray-50 p-3">
                                     <p>Tổng lượt review: <span className="font-semibold">{statsData.tongLuotReview}</span></p>
                                     <p>Điểm trung bình: <span className="font-semibold">{formatAverageRating(statsData.diemTrungBinh)}</span></p>
-                                    <p>Review đầu tiên: {formatDateTime(statsData.reviewDauTien)}</p>
-                                    <p>Review gần nhất: {formatDateTime(statsData.reviewGanNhat)}</p>
+                                    <p>Review đầu tiên: <span className="text-gray-600">{formatDateTime(statsData.reviewDauTien)}</span></p>
+                                    <p>Review gần nhất: <span className="text-gray-600">{formatDateTime(statsData.reviewGanNhat)}</span></p>
                                   </div>
                                 ) : (
-                                  <span className="text-xs text-gray-500">Bấm "Xem số lượt review" để hiển thị số liệu.</span>
+                                  <span className="text-gray-500 italic">Bấm "Xem số review" để hiển thị số liệu.</span>
                                 )}
 
                                 {aiStatsData && (
-                                  <div className="rounded border border-amber-200 bg-amber-50 p-2 space-y-2">
+                                  <div className="rounded-md border border-amber-200 bg-amber-50/50 p-3 space-y-3">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
-                                      <span className={`inline-flex text-[11px] rounded border px-2 py-0.5 ${aiSentimentMeta.tone}`}>
+                                      <span className={`inline-flex text-[11px] font-medium rounded-full border px-2.5 py-0.5 ${aiSentimentMeta.tone}`}>
                                         Sentiment: {aiSentimentMeta.label}
                                       </span>
-                                      <span className={`inline-flex text-[11px] rounded border px-2 py-0.5 ${aiScoreMeta.tone}`}>
+                                      <span className={`inline-flex text-[11px] font-medium rounded-full border px-2.5 py-0.5 ${aiScoreMeta.tone}`}>
                                         {aiScoreMeta.label}
                                       </span>
                                     </div>
 
                                     <div>
-                                      <p className="text-gray-700">
+                                      <p className="text-gray-800 mb-1.5">
                                         Điểm AI tổng quan: <span className="font-semibold">{formatAiScore(aiStatsData.diemTongQuan)}</span> ({formatAiPercent(aiStatsData.diemTongQuan)})
                                       </p>
-                                      <div className="mt-1 h-2 w-full rounded-full bg-amber-100 overflow-hidden">
-                                        <div className={`h-full ${aiScoreMeta.bar}`} style={{ width: formatAiPercent(aiStatsData.diemTongQuan) }} />
+                                      <div className="h-1.5 w-full rounded-full bg-gray-200 overflow-hidden">
+                                        <div className={`h-full ${aiScoreMeta.bar} transition-all duration-500`} style={{ width: formatAiPercent(aiStatsData.diemTongQuan) }} />
                                       </div>
                                     </div>
 
-                                    <p>
-                                      Thuộc tính ảnh hưởng nhất:{' '}
-                                      <span className="font-semibold">
+                                    <p className="text-gray-700">
+                                      Thuộc tính ảnh hưởng nhất: <br />
+                                      <span className="font-semibold text-gray-900 leading-relaxed inline-block mt-0.5">
                                         {aiStatsData.insight?.thuocTinhAnhHuongNhat?.label || aiStatsData.insight?.thuocTinhAnhHuongNhat?.key || 'Chưa có'}
                                       </span>
                                     </p>
 
-                                    {aiWarnings.length > 0 && (
-                                      <p className="text-red-700">
-                                        Cảnh báo nổi bật: <span className="font-semibold">{aiWarnings[0].title}</span>
-                                      </p>
-                                    )}
+
 
                                     <button
                                       type="button"
                                       onClick={() => openAiReportModal(aiStatsPayload, biz.name)}
-                                      className="w-full rounded border border-amber-300 bg-white px-2 py-1.5 text-amber-800 hover:bg-amber-100"
+                                      className="w-full rounded border border-amber-300 bg-white px-2 py-1.5 text-amber-800 font-medium hover:bg-amber-100 hover:border-amber-400 transition-colors duration-200"
                                     >
                                       Xem báo cáo AI chi tiết
                                     </button>
@@ -807,11 +723,10 @@ export default function OfficialDashboardPage() {
                     key={item.status}
                     type="button"
                     onClick={() => setSelectedStatus(item.status)}
-                    className={`text-xs px-2.5 py-1.5 rounded border transition-colors ${
-                      selectedStatus === item.status
+                    className={`text-xs px-2.5 py-1.5 rounded border transition-colors ${selectedStatus === item.status
                         ? 'bg-[#8B2500] text-white border-[#8B2500]'
                         : 'bg-white text-gray-700 border-gray-200 hover:border-[#8B2500]'
-                    }`}
+                      }`}
                   >
                     {item.label} ({item.count})
                   </button>
@@ -966,34 +881,7 @@ export default function OfficialDashboardPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-red-100 bg-[#fff8f7] p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="font-semibold text-[#7d1f00]">Cảnh báo cần chú ý</h3>
-                      <span className="text-xs text-[#7d1f00]">{aiModal.warnings.length} mục</span>
-                    </div>
 
-                    {aiModal.warnings.length === 0 ? (
-                      <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                        Không phát hiện cảnh báo nghiêm trọng trong kỳ phân tích hiện tại.
-                      </div>
-                    ) : (
-                      <div className="mt-2 space-y-2">
-                        {aiModal.warnings.map((warning) => {
-                          const warningMeta = getAiWarningMeta(warning.level)
-
-                          return (
-                            <div key={warning.id} className={`rounded border px-3 py-2 text-sm ${warningMeta.tone}`}>
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="font-semibold">{warning.title}</p>
-                                <span className="text-[11px] px-2 py-0.5 rounded border border-current">{warningMeta.chip}</span>
-                              </div>
-                              <p className="mt-1 text-xs">{warning.detail}</p>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
 
                   <div className="rounded-lg border border-gray-200 bg-white p-3">
                     <h3 className="font-semibold text-gray-900">Điểm thành phần</h3>
@@ -1128,5 +1016,7 @@ export default function OfficialDashboardPage() {
         </div>
       )}
     </div>
+    <AiTestWidget />
+  </>
   )
 }

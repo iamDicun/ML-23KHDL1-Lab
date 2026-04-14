@@ -85,16 +85,9 @@ export default function Navbar() {
   }
 
   const handleLogout = () => {
-    const currentRole = user?.role
     logout()
-    closeNavDropdown()
-
-    if (currentRole === 'official') {
-      setOfficialModalOpen(true)
-      return
-    }
-
-    navigate('/dang-nhap/cong-dan')
+    // Perform a hard redirect to ensure all React state and memory is completely cleared
+    window.location.href = '/dang-nhap/cong-dan'
   }
 
   return (
@@ -130,7 +123,9 @@ export default function Navbar() {
           <div className="flex items-center gap-3">
             {!isAuthenticated && (
               <>
-                <button className="px-5 py-2 border-2 border-[#8B2500] text-[#8B2500] font-semibold text-sm rounded hover:bg-[#8B2500] hover:text-white transition-colors">
+                <button
+                  onClick={() => navigate('/dang-nhap/cong-dan?tab=register')}
+                  className="px-5 py-2 border-2 border-[#8B2500] text-[#8B2500] font-semibold text-sm rounded hover:bg-[#8B2500] hover:text-white transition-colors">
                   Đăng ký
                 </button>
                 <div className="relative" ref={loginDropdownRef}>

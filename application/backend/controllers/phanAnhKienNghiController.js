@@ -12,8 +12,14 @@ export const PhanAnhKienNghiController = {
   // GET /phan-anh-kien-nghi/tra-cuu?q=...&soDienThoai=...&limit=...
   traCuuPhanAnh: async (req, res, next) => {
     try {
-      const { q, soDienThoai, limit } = req.query
-      const result = await PhanAnhKienNghiService.traCuuPhanAnh({ q, soDienThoai, limit })
+      const { q, limit } = req.query
+      let { soDienThoai } = req.query
+      // If authenticated as citizen (non-official), force phone filter to their own phone
+      const jwtUser = req.user
+      if (jwtUser && jwtUser.role !== 'official' && jwtUser.phone) {
+        soDienThoai = jwtUser.phone
+      }
+      const result = await PhanAnhKienNghiService.traCuuPhanAnh({ q, soDienThoai, limit, submitterUserId: null })
       res.json(result)
     } catch (err) { next(err) }
   },

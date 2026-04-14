@@ -43,3 +43,17 @@ export const requireRole = (...allowedRoles) => {
     return next()
   }
 }
+
+// Decodes the JWT if present but does NOT block if missing/invalid
+export const optionalJwtAuth = (req, res, next) => {
+  try {
+    const token = getBearerToken(req.headers.authorization)
+    if (token) {
+      const payload = verifyAccessToken(token)
+      req.user = payload
+    }
+  } catch {
+    // token invalid — treat as unauthenticated, don't block
+  }
+  return next()
+}
