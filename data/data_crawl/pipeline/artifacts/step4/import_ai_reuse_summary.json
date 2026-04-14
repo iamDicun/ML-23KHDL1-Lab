@@ -1,0 +1,15 @@
+{
+  "hotels_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\hotels_all_reviews_filtered_out_step2_top10.csv",
+  "reviews_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\reviews_all_filtered_out_step2_top10_no_labels.csv",
+  "rows_hotels_upserted": 8,
+  "rows_reviews_upserted": 16,
+  "preprocessing_version": "run_process_hygiene_3class",
+  "db_tables": [
+    "ai_reuse_hotels",
+    "ai_reuse_reviews"
+  ],
+  "notes": [
+    "conf_mean and conf_min are dropped before import",
+    "reviews are preprocessed with thuan_hoa_vs + VietnameseTextPreprocessor.process_batch(correct_errors=True)"
+  ]
+}

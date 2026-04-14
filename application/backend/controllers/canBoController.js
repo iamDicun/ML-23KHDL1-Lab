@@ -50,12 +50,22 @@ export const CanBoController = {
     } catch (err) { next(err) }
   },
 
-  // GET /can-bo/co-so/:businessId/review-thong-ke?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
+  // GET /can-bo/co-so/:coSoId/review-thong-ke?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
   getThongKeReviewTheoCoSo: async (req, res, next) => {
     try {
-      const { businessId } = req.params
+      const { coSoId } = req.params
       const { fromDate, toDate } = req.query
-      const result = await CanBoService.getThongKeReviewTheoCoSo({ businessId, fromDate, toDate })
+      const result = await CanBoService.getThongKeReviewTheoCoSo({ coSoId, fromDate, toDate })
+      res.json(result)
+    } catch (err) { next(err) }
+  },
+
+  // GET /can-bo/co-so/:coSoId/thong-ke-ai?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
+  getThongKeAiTheoCoSo: async (req, res, next) => {
+    try {
+      const { coSoId } = req.params
+      const { fromDate, toDate } = req.query
+      const result = await CanBoService.getThongKeAiTheoCoSo({ coSoId, fromDate, toDate })
       res.json(result)
     } catch (err) { next(err) }
   },

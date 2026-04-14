@@ -8,3 +8,5 @@ regex
 emoji
 vncorenlp
 tqdm
+psycopg2-binary
+sentencepiece

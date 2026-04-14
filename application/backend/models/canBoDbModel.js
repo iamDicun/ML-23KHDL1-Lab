@@ -13,6 +13,12 @@ const safeQueryWhenTableOptional = async (sql, params = []) => {
   }
 }
 
+const normalizeLimit = (limit, fallback = 12, max = 5000) => {
+  const parsed = Number(limit)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(Math.max(Math.trunc(parsed), 1), max)
+}
+
 export const CanBoDbModel = {
   findAllOfficials: async () => {
     const result = await query(
@@ -34,58 +40,64 @@ export const CanBoDbModel = {
     }))
   },
 
-  findBusinesses: async (limit = 12) => {
-    const result = await query(
+  findHotels: async (limit = 12) => {
+    const result = await safeQueryWhenTableOptional(
       `SELECT
-         b.id,
-         b.name,
-         b.address,
-         b.district,
-         b.province_city,
-         b.status,
-         b.license_number,
-         b.created_at,
-         bt.name AS business_type,
-         u.full_name AS owner_name,
-         u.phone AS owner_phone
-       FROM businesses b
-       INNER JOIN business_types bt ON bt.id = b.type_id
-       LEFT JOIN users u ON u.id = b.owner_id
-       ORDER BY b.created_at DESC
+         h.id,
+         h.source_hotel_id,
+         h.hotel_name AS name,
+         NULL::TEXT AS address,
+         NULL::TEXT AS district,
+         'TP. Ho Chi Minh'::TEXT AS province_city,
+         'active'::TEXT AS status,
+         NULL::TEXT AS license_number,
+         h.imported_at AS created_at,
+         'Khách sạn'::TEXT AS business_type,
+         NULL::TEXT AS owner_name,
+         NULL::TEXT AS owner_phone,
+         h.total_reviews_in_output_results,
+         h.removed_reviews_in_step2,
+         h.kept_reviews_in_step2
+       FROM ai_reuse_hotels h
+       ORDER BY h.imported_at DESC, h.id DESC
        LIMIT $1`,
-      [limit]
+      [normalizeLimit(limit, 12, 5000)]
     )
 
     return result.rows
   },
 
-  findBusinessById: async (businessId) => {
+  findHotelById: async (hotelId) => {
     const result = await query(
       `SELECT
-         b.id,
-         b.name,
-         b.address,
-         b.district,
-         b.province_city,
-         b.status,
-         b.license_number,
-         b.created_at,
-         bt.name AS business_type,
-         u.full_name AS owner_name,
-         u.phone AS owner_phone
-       FROM businesses b
-       INNER JOIN business_types bt ON bt.id = b.type_id
-       LEFT JOIN users u ON u.id = b.owner_id
-       WHERE b.id = $1
+         h.id,
+         h.source_hotel_id,
+         h.hotel_name AS name,
+         NULL::TEXT AS address,
+         NULL::TEXT AS district,
+         'TP. Ho Chi Minh'::TEXT AS province_city,
+         'active'::TEXT AS status,
+         NULL::TEXT AS license_number,
+         h.imported_at AS created_at,
+         'Khách sạn'::TEXT AS business_type,
+         NULL::TEXT AS owner_name,
+         NULL::TEXT AS owner_phone,
+         h.total_reviews_in_output_results,
+         h.removed_reviews_in_step2,
+         h.kept_reviews_in_step2
+       FROM ai_reuse_hotels h
+       WHERE h.id = $1
        LIMIT 1`,
-      [Number(businessId)]
+      [Number(hotelId)]
     )
 
     return result.rows[0] || null
   },
 
-  countBusinesses: async () => {
-    const result = await query('SELECT COUNT(*)::INTEGER AS count FROM businesses')
+  countHotels: async () => {
+    const result = await safeQueryWhenTableOptional(
+      'SELECT COUNT(*)::INTEGER AS count FROM ai_reuse_hotels'
+    )
     return Number(result.rows[0]?.count || 0)
   },
 
@@ -243,27 +255,28 @@ export const CanBoDbModel = {
     return result.rows
   },
 
-  getBusinessReviewStats: async ({ businessId, fromDate = null, toDate = null }) => {
-    const params = [Number(businessId)]
-    const whereClauses = ['business_id = $1']
+  getHotelReviewStats: async ({ hotelId, fromDate = null, toDate = null }) => {
+    const params = [Number(hotelId)]
+    const whereClauses = ['h.id = $1']
 
     if (fromDate) {
       params.push(fromDate)
-      whereClauses.push(`reviewed_at >= $${params.length}::date`)
+      whereClauses.push(`r.imported_at >= $${params.length}::date`)
     }
 
     if (toDate) {
       params.push(toDate)
-      whereClauses.push(`reviewed_at < ($${params.length}::date + INTERVAL '1 day')`)
+      whereClauses.push(`r.imported_at < ($${params.length}::date + INTERVAL '1 day')`)
     }
 
     const result = await query(
       `SELECT
          COUNT(*)::INTEGER AS total_reviews,
-         ROUND(AVG(rating_star)::numeric, 2)::FLOAT AS average_rating,
-         MIN(reviewed_at) AS first_review_at,
-         MAX(reviewed_at) AS last_review_at
-       FROM customer_reviews
+         ROUND(AVG(r.rating)::numeric, 2)::FLOAT AS average_rating,
+         MIN(r.imported_at) AS first_review_at,
+         MAX(r.imported_at) AS last_review_at
+       FROM ai_reuse_reviews r
+       INNER JOIN ai_reuse_hotels h ON h.source_hotel_id = r.source_hotel_id
        WHERE ${whereClauses.join(' AND ')}`,
       params
     )
@@ -276,37 +289,145 @@ export const CanBoDbModel = {
     }
   },
 
-  findBusinessReviews: async ({ businessId, fromDate = null, toDate = null, limit = 200 }) => {
-    const params = [Number(businessId)]
-    const whereClauses = ['business_id = $1']
+  findHotelReviews: async ({ hotelId, fromDate = null, toDate = null, limit = 200 }) => {
+    const params = [Number(hotelId)]
+    const whereClauses = ['h.id = $1']
 
     if (fromDate) {
       params.push(fromDate)
-      whereClauses.push(`reviewed_at >= $${params.length}::date`)
+      whereClauses.push(`r.imported_at >= $${params.length}::date`)
     }
 
     if (toDate) {
       params.push(toDate)
-      whereClauses.push(`reviewed_at < ($${params.length}::date + INTERVAL '1 day')`)
+      whereClauses.push(`r.imported_at < ($${params.length}::date + INTERVAL '1 day')`)
     }
 
-    params.push(Math.min(Math.max(Number(limit) || 200, 1), 500))
+    params.push(normalizeLimit(limit, 200, 500))
 
     const result = await query(
       `SELECT
-         id,
-         customer_name,
-         rating_star::INTEGER AS rating_star,
-         comment,
-         reviewed_at
-       FROM customer_reviews
+         r.id,
+         NULL::TEXT AS customer_name,
+         CASE
+           WHEN r.rating IS NULL THEN NULL
+           ELSE LEAST(5, GREATEST(0, ROUND(r.rating)::INTEGER))
+         END AS rating_star,
+         r.review_text_raw AS comment,
+         r.review_text_processed AS comment_processed,
+         r.imported_at AS reviewed_at
+       FROM ai_reuse_reviews r
+       INNER JOIN ai_reuse_hotels h ON h.source_hotel_id = r.source_hotel_id
        WHERE ${whereClauses.join(' AND ')}
-       ORDER BY reviewed_at DESC NULLS LAST, id DESC
+       ORDER BY r.imported_at DESC NULLS LAST, r.id DESC
        LIMIT $${params.length}`,
       params
     )
 
     return result.rows
+  },
+
+  upsertHotelAiPrediction: async ({
+    hotelId,
+    hygieneScore,
+    serviceScore,
+    facilityScore,
+    friendlinessScore,
+    sentimentLabel
+  }) => {
+    const result = await query(
+      `INSERT INTO hotel_ai_predictions (
+         hotel_id,
+         hygiene_score,
+         service_score,
+         facility_score,
+         friendliness_score,
+         sentiment_label,
+         last_evaluated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (hotel_id)
+       DO UPDATE SET
+         hygiene_score = EXCLUDED.hygiene_score,
+         service_score = EXCLUDED.service_score,
+         facility_score = EXCLUDED.facility_score,
+         friendliness_score = EXCLUDED.friendliness_score,
+         sentiment_label = EXCLUDED.sentiment_label,
+         last_evaluated_at = NOW()
+       RETURNING id, hotel_id, hygiene_score, service_score, facility_score, friendliness_score, sentiment_label, last_evaluated_at`,
+      [
+        Number(hotelId),
+        hygieneScore,
+        serviceScore,
+        facilityScore,
+        friendlinessScore,
+        sentimentLabel
+      ]
+    )
+
+    return result.rows[0] || null
+  },
+
+  insertHotelAiScoreHistoryEntries: async (hotelId, entries = []) => {
+    if (!Array.isArray(entries) || entries.length === 0) return []
+
+    const inserted = []
+
+    for (const entry of entries) {
+      const result = await query(
+        `INSERT INTO hotel_ai_score_history (hotel_id, score_type, score_value, evaluated_at)
+         VALUES ($1, $2, $3, NOW())
+         RETURNING id, hotel_id, score_type, score_value, evaluated_at`,
+        [Number(hotelId), entry.scoreType, entry.scoreValue]
+      )
+
+      if (result.rows[0]) inserted.push(result.rows[0])
+    }
+
+    return inserted
+  },
+
+  insertHotelInsightSummary: async ({
+    hotelId,
+    attributeAffected,
+    topNegativeKeywords,
+    representativeReviews,
+    llmDraftedDocument = null
+  }) => {
+    const result = await query(
+      `INSERT INTO hotel_insights_summary (
+         hotel_id,
+         attribute_affected,
+         top_negative_keywords,
+         representative_reviews,
+         llm_drafted_document,
+         generated_at
+       )
+       VALUES ($1, $2, $3::text[], $4, $5, NOW())
+       RETURNING id, hotel_id, attribute_affected, top_negative_keywords, representative_reviews, llm_drafted_document, generated_at`,
+      [
+        Number(hotelId),
+        attributeAffected,
+        topNegativeKeywords,
+        representativeReviews,
+        llmDraftedDocument
+      ]
+    )
+
+    return result.rows[0] || null
+  },
+
+  findLatestHotelInsightSummary: async (hotelId) => {
+    const result = await safeQueryWhenTableOptional(
+      `SELECT id, hotel_id, attribute_affected, top_negative_keywords, representative_reviews, llm_drafted_document, generated_at
+       FROM hotel_insights_summary
+       WHERE hotel_id = $1
+       ORDER BY generated_at DESC, id DESC
+       LIMIT 1`,
+      [Number(hotelId)]
+    )
+
+    return result.rows[0] || null
   }
 }
 

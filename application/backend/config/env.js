@@ -17,5 +17,9 @@ export const config = {
     name: process.env.DB_NAME,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD
+  },
+  aiModel: {
+    baseUrl: process.env.AI_MODEL_API_BASE_URL || 'https://huggingface.co/spaces/wokogaming/asba',
+    timeoutMs: Number(process.env.AI_MODEL_API_TIMEOUT_MS || 180000)
   }
 }

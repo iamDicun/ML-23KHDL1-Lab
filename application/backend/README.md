@@ -134,6 +134,54 @@ Update a user
 ### DELETE /users/:id
 Delete a user
 
+### AI Reuse import (official only)
+
+Các endpoint dưới đây dùng để chạy pipeline preprocess + import dữ liệu review đã lọc vào DB ngay từ backend.
+
+- `POST /ai-reuse/import/run`
+  - Header: `x-api-key`, `Authorization: Bearer <official_token>`
+  - Body (optional):
+    ```json
+    {
+      "pythonExecutable": "C:/Users/ADMIN/Documents/GitHub/ML-23KHDL1-Lab/.venv/Scripts/python.exe"
+    }
+    ```
+  - Trả về `job` với trạng thái ban đầu `running`.
+
+- `GET /ai-reuse/import/jobs/latest`
+  - Lấy trạng thái job gần nhất.
+
+- `GET /ai-reuse/import/jobs/:jobId`
+  - Lấy trạng thái theo `jobId`.
+
+- `GET /ai-reuse/import/stats`
+  - Xem số lượng bản ghi đã nhập trong `ai_reuse_hotels`, `ai_reuse_reviews` và job gần nhất.
+
+Lưu ý:
+- Cần chạy migration `sql/migration_20260415_ai_reuse_filtered_hotels_reviews.sql` trước khi import.
+- Nếu muốn dọn hẳn phần schema business cũ và chỉ giữ hotel/review thực tế, chạy thêm `sql/migration_20260416_hotel_only_cleanup.sql`.
+- Script backend sẽ gọi file Python: `data/data_crawl/pipeline/scripts/step6_preprocess_and_import_filtered_hotels_reviews.py`.
+
+### Chạy import bằng script backend (CLI)
+
+Từ thư mục `application/backend`:
+
+```bash
+npm run import:ai-reuse
+```
+
+Tùy chọn Python executable:
+
+```bash
+npm run import:ai-reuse -- --python="C:/path/to/python.exe"
+```
+
+Script này dùng 2 file input đã tách:
+- `data/data_crawl/hotels_all_reviews_filtered_out_step2_top10.csv`
+- `data/data_crawl/reviews_all_filtered_out_step2_top10_no_labels.csv`
+
+và gọi pipeline preprocess+upsert vào `ai_reuse_hotels`, `ai_reuse_reviews`.
+
 ## Current State
 
 **Data Storage**: Hiện tại sử dụng in-memory data (array trong `userModel.js`)

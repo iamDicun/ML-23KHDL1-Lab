@@ -191,13 +191,15 @@ class VietnameseTextPreprocessor:
         self._build_teencodes()
         
         self.max_correction_length = max_correction_length
-         # Configure device, preferring GPU when available
-        self.device = torch.device("cuda:0")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        model_kwargs = {}
+        if self.device.type == 'cuda':
+            model_kwargs['torch_dtype'] = torch.bfloat16
         
         self.tokenizer = AutoTokenizer.from_pretrained('bmd1905/vietnamese-correction-v2')
         self.corrector_model = AutoModelForSeq2SeqLM.from_pretrained(
             'bmd1905/vietnamese-correction-v2',
-            torch_dtype=torch.bfloat16
+            **model_kwargs
         ).to(self.device)
         
     

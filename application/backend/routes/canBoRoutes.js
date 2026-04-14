@@ -19,7 +19,8 @@ router.get('/dashboard', CanBoController.getDashboard)
 
 // Thống kê
 router.get('/thong-ke', CanBoController.getThongKe)
-router.get('/co-so/:businessId/review-thong-ke', CanBoController.getThongKeReviewTheoCoSo)
+router.get('/co-so/:coSoId/review-thong-ke', CanBoController.getThongKeReviewTheoCoSo)
+router.get('/co-so/:coSoId/thong-ke-ai', CanBoController.getThongKeAiTheoCoSo)
 
 // Danh sách cán bộ
 router.get('/', CanBoController.getDanhSachCanBo)

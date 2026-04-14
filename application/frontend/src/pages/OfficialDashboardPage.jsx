@@ -87,6 +87,163 @@ const formatAverageRating = (value) => {
   return `${Number(value).toFixed(2)} / 5`
 }
 
+const formatAiScore = (value) => {
+  if (value === null || value === undefined) return 'Chưa có'
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 'Chưa có'
+  return parsed.toFixed(4)
+}
+
+const AI_COMPONENT_META = {
+  hygiene: { label: 'Vệ sinh' },
+  service: { label: 'Dịch vụ' },
+  facility: { label: 'Cơ sở vật chất' },
+  friendliness: { label: 'Thân thiện' }
+}
+
+const clampAiScore = (value) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.min(1, parsed))
+}
+
+const formatAiPercent = (value) => `${Math.round(clampAiScore(value) * 100)}%`
+
+const getAiScoreMeta = (value) => {
+  const score = clampAiScore(value)
+
+  if (score < 0.45) {
+    return {
+      label: 'Nguy cơ cao',
+      tone: 'text-red-700 bg-red-50 border-red-200',
+      bar: 'bg-red-500'
+    }
+  }
+
+  if (score < 0.65) {
+    return {
+      label: 'Cần theo dõi',
+      tone: 'text-amber-700 bg-amber-50 border-amber-200',
+      bar: 'bg-amber-500'
+    }
+  }
+
+  return {
+    label: 'Ổn định',
+    tone: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+    bar: 'bg-emerald-500'
+  }
+}
+
+const getAiSentimentMeta = (sentimentLabel) => {
+  const normalized = String(sentimentLabel || '').trim().toLowerCase()
+
+  if (normalized === 'positive') {
+    return {
+      label: 'Tích cực',
+      tone: 'text-emerald-700 bg-emerald-50 border-emerald-200'
+    }
+  }
+
+  if (normalized === 'negative') {
+    return {
+      label: 'Tiêu cực',
+      tone: 'text-red-700 bg-red-50 border-red-200'
+    }
+  }
+
+  return {
+    label: 'Trung tính',
+    tone: 'text-amber-700 bg-amber-50 border-amber-200'
+  }
+}
+
+const getAiWarningMeta = (level) => {
+  if (level === 'high') {
+    return {
+      tone: 'border-red-200 bg-red-50 text-red-800',
+      chip: 'Mức cao'
+    }
+  }
+
+  if (level === 'medium') {
+    return {
+      tone: 'border-amber-200 bg-amber-50 text-amber-800',
+      chip: 'Mức trung bình'
+    }
+  }
+
+  return {
+    tone: 'border-blue-200 bg-blue-50 text-blue-800',
+    chip: 'Thông tin bổ sung'
+  }
+}
+
+const buildAiWarnings = (aiData) => {
+  if (!aiData?.ketQuaAi) return []
+
+  const warnings = []
+  const pushWarning = (level, title, detail) => {
+    warnings.push({
+      id: `${level}-${title}-${warnings.length}`,
+      level,
+      title,
+      detail
+    })
+  }
+
+  const inputData = aiData?.duLieuDauVao || {}
+  const resultData = aiData?.ketQuaAi || {}
+
+  const validReviewCount = Number(inputData?.tongReviewHopLeChoModel || 0)
+  const processedReviewCount = Number(inputData?.tongReviewDaTienXuLySuDungChoModel || 0)
+  const overallScore = clampAiScore(resultData?.diemTongQuan)
+
+  if (overallScore < 0.45) {
+    pushWarning('high', 'Điểm AI tổng quan thấp', 'Cơ sở đang có xu hướng phản hồi tiêu cực, cần kiểm tra thực địa sớm.')
+  } else if (overallScore < 0.65) {
+    pushWarning('medium', 'Điểm AI tổng quan ở mức cảnh báo', 'Nên theo dõi sát thêm trong kỳ tiếp theo để tránh giảm chất lượng dịch vụ.')
+  }
+
+  if (validReviewCount < 3) {
+    pushWarning('high', 'Dữ liệu đánh giá quá ít', 'Số review hợp lệ cho AI còn thấp, kết quả có thể chưa phản ánh đầy đủ thực trạng.')
+  } else if (validReviewCount < 8) {
+    pushWarning('medium', 'Dữ liệu đánh giá còn mỏng', 'Nên thu thập thêm phản hồi trước khi đưa ra quyết định xử lý lớn.')
+  }
+
+  if (processedReviewCount < validReviewCount) {
+    pushWarning('medium', 'Một phần review chưa được tiền xử lý', 'Kết quả AI hiện tại có thể chịu nhiễu ngôn ngữ trong một số bình luận.')
+  }
+
+  const sentiment = String(resultData?.sentimentLabel || '').trim().toLowerCase()
+  if (sentiment === 'negative') {
+    pushWarning('high', 'Sentiment tổng thể đang tiêu cực', 'Ưu tiên kiểm tra nhóm yếu tố bị chấm thấp và phản hồi từ người dân.')
+  } else if (sentiment === 'neutral') {
+    pushWarning('medium', 'Sentiment tổng thể trung tính', 'Cần theo dõi thêm vì trải nghiệm khách hàng chưa thực sự tích cực.')
+  }
+
+  const componentScores = resultData?.diemThanhPhan || {}
+  Object.entries(AI_COMPONENT_META).forEach(([key, meta]) => {
+    const score = clampAiScore(componentScores?.[key])
+    if (score < 0.45) {
+      pushWarning('high', `${meta.label} ở mức thấp`, `Thuộc tính ${meta.label.toLowerCase()} cần được ưu tiên cải thiện trong kế hoạch xử lý.`)
+    }
+  })
+
+  const negativeKeywords = Array.isArray(resultData?.insight?.topTuKhoaTieuCuc)
+    ? resultData.insight.topTuKhoaTieuCuc
+    : []
+
+  if (negativeKeywords.length >= 5) {
+    pushWarning('info', 'Có nhiều từ khóa tiêu cực lặp lại', 'Nên đối chiếu cụm từ tiêu cực với quy trình vận hành để tìm nguyên nhân gốc.')
+  }
+
+  const levelPriority = { high: 0, medium: 1, info: 2 }
+  return warnings
+    .sort((a, b) => (levelPriority[a.level] ?? 9) - (levelPriority[b.level] ?? 9))
+    .slice(0, 6)
+}
+
 const formatRatingStars = (value) => {
   const normalized = Math.max(0, Math.min(5, Number(value) || 0))
   return `${'★'.repeat(normalized)}${'☆'.repeat(5 - normalized)}`
@@ -123,7 +280,9 @@ export default function OfficialDashboardPage() {
   const [requestNoteDrafts, setRequestNoteDrafts] = useState({})
   const [reviewStatsFilters, setReviewStatsFilters] = useState({ fromDate: '', toDate: '' })
   const [reviewStatsByBusiness, setReviewStatsByBusiness] = useState({})
+  const [aiStatsByBusiness, setAiStatsByBusiness] = useState({})
   const [reviewStatsLoadingBusinessId, setReviewStatsLoadingBusinessId] = useState(null)
+  const [aiStatsLoadingBusinessId, setAiStatsLoadingBusinessId] = useState(null)
   const [reviewStatsError, setReviewStatsError] = useState('')
   const [aiStatsNotice, setAiStatsNotice] = useState('')
   const [reviewModal, setReviewModal] = useState({
@@ -132,6 +291,12 @@ export default function OfficialDashboardPage() {
     thongKeReview: null,
     danhSachReview: [],
     boLoc: { tuNgay: null, denNgay: null }
+  })
+  const [aiModal, setAiModal] = useState({
+    open: false,
+    businessName: '',
+    payload: null,
+    warnings: []
   })
 
   const rawSection = useMemo(() => new URLSearchParams(location.search).get('section'), [location.search])
@@ -173,11 +338,16 @@ export default function OfficialDashboardPage() {
     if (activeSection !== SECTION_BUSINESS_STATS) {
       if (reviewStatsError) setReviewStatsError('')
       if (aiStatsNotice) setAiStatsNotice('')
+      if (Object.keys(reviewStatsByBusiness).length > 0) setReviewStatsByBusiness({})
+      if (Object.keys(aiStatsByBusiness).length > 0) setAiStatsByBusiness({})
       if (reviewModal.open) {
         setReviewModal((prev) => ({ ...prev, open: false }))
       }
+      if (aiModal.open) {
+        setAiModal((prev) => ({ ...prev, open: false }))
+      }
     }
-  }, [activeSection, updateNotice.text, reviewStatsError, aiStatsNotice, reviewModal.open])
+  }, [activeSection, updateNotice.text, reviewStatsError, aiStatsNotice, reviewModal.open, aiModal.open, reviewStatsByBusiness, aiStatsByBusiness])
 
   const statusOptions = useMemo(() => {
     return [{ status: 'all', label: 'Tất cả', count: dashboard.requests.length }, ...dashboard.requestStatusSummary]
@@ -262,9 +432,71 @@ export default function OfficialDashboardPage() {
     }
   }
 
-  const handleAiStatsPlaceholder = (businessName) => {
-    setAiStatsNotice(`Chức năng thống kê bằng AI cho cơ sở "${businessName}" đang được phát triển.`)
+  const openAiReportModal = (payload, fallbackBusinessName = '') => {
+    if (!payload?.ketQuaAi) return
+
+    setAiModal({
+      open: true,
+      businessName: payload?.coSo?.tenCoSo || fallbackBusinessName || 'Chưa xác định cơ sở',
+      payload,
+      warnings: buildAiWarnings(payload)
+    })
   }
+
+  const handleViewAiStats = async (business) => {
+    const businessId = business.id
+
+    if (reviewStatsFilters.fromDate && reviewStatsFilters.toDate && reviewStatsFilters.fromDate > reviewStatsFilters.toDate) {
+      setReviewStatsError('Khoảng ngày không hợp lệ: Từ ngày phải nhỏ hơn hoặc bằng Đến ngày.')
+      return
+    }
+
+    setReviewStatsError('')
+    setAiStatsNotice('')
+    setAiStatsLoadingBusinessId(businessId)
+
+    try {
+      const query = new URLSearchParams()
+      if (reviewStatsFilters.fromDate) query.set('fromDate', reviewStatsFilters.fromDate)
+      if (reviewStatsFilters.toDate) query.set('toDate', reviewStatsFilters.toDate)
+
+      const queryString = query.toString()
+      const endpoint = `/can-bo/co-so/${businessId}/thong-ke-ai${queryString ? `?${queryString}` : ''}`
+      const data = await apiClient.get(endpoint)
+      const warnings = buildAiWarnings(data)
+
+      setAiStatsByBusiness((prev) => ({
+        ...prev,
+        [businessId]: data
+      }))
+
+      setAiStatsNotice(
+        `Đã thống kê AI cho cơ sở "${data?.coSo?.tenCoSo || business.name}". Có ${warnings.length} cảnh báo cần theo dõi.`
+      )
+
+      openAiReportModal(data, business.name)
+    } catch (error) {
+      setReviewStatsError(error.message || 'Không thể thống kê AI cho cơ sở này.')
+    } finally {
+      setAiStatsLoadingBusinessId(null)
+    }
+  }
+
+  const aiModalResult = aiModal?.payload?.ketQuaAi || null
+  const aiModalInput = aiModal?.payload?.duLieuDauVao || null
+  const aiModalSentimentMeta = getAiSentimentMeta(aiModalResult?.sentimentLabel)
+  const aiModalScoreMeta = getAiScoreMeta(aiModalResult?.diemTongQuan)
+  const aiModalComponentEntries = Object.entries(AI_COMPONENT_META).map(([key, meta]) => ({
+    key,
+    label: meta.label,
+    score: aiModalResult?.diemThanhPhan?.[key] ?? 0
+  }))
+  const aiModalKeywords = Array.isArray(aiModalResult?.insight?.topTuKhoaTieuCuc)
+    ? aiModalResult.insight.topTuKhoaTieuCuc
+    : []
+  const aiModalRepresentativeReviews = Array.isArray(aiModalResult?.insight?.reviewDaiDien)
+    ? aiModalResult.insight.reviewDaiDien
+    : []
 
   return (
     <div className="min-h-screen bg-[#f5f6fa]">
@@ -383,7 +615,10 @@ export default function OfficialDashboardPage() {
                     onClick={() => {
                       setReviewStatsFilters({ fromDate: '', toDate: '' })
                       setReviewStatsByBusiness({})
+                      setAiStatsByBusiness({})
                       setReviewStatsError('')
+                      setAiStatsNotice('')
+                      setAiModal({ open: false, businessName: '', payload: null, warnings: [] })
                     }}
                     className="h-9 px-3 rounded border border-gray-300 text-sm text-gray-700 hover:border-[#8B2500] hover:text-[#8B2500]"
                   >
@@ -415,12 +650,17 @@ export default function OfficialDashboardPage() {
                         <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Địa chỉ</th>
                         <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Trạng thái</th>
                         <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Thao tác</th>
-                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Kết quả review</th>
+                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Kết quả tổng hợp</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
                       {dashboard.businesses.map((biz) => {
                         const statsData = reviewStatsByBusiness[biz.id]?.thongKeReview
+                        const aiStatsPayload = aiStatsByBusiness[biz.id]
+                        const aiStatsData = aiStatsPayload?.ketQuaAi
+                        const aiWarnings = aiStatsPayload ? buildAiWarnings(aiStatsPayload) : []
+                        const aiSentimentMeta = getAiSentimentMeta(aiStatsData?.sentimentLabel)
+                        const aiScoreMeta = getAiScoreMeta(aiStatsData?.diemTongQuan)
 
                         return (
                           <tr key={biz.id}>
@@ -428,7 +668,7 @@ export default function OfficialDashboardPage() {
                               <p className="font-semibold text-gray-900">{biz.name}</p>
                               <p className="text-xs text-gray-500 mt-1">{biz.business_type}</p>
                             </td>
-                            <td className="px-3 py-3 align-top text-gray-700">{biz.address}</td>
+                            <td className="px-3 py-3 align-top text-gray-700">{biz.address || 'Chưa cập nhật'}</td>
                             <td className="px-3 py-3 align-top">
                               <span className="inline-flex text-xs rounded border border-gray-200 bg-gray-50 px-2 py-1 text-gray-700">
                                 {businessStatusLabel(biz.status)}
@@ -447,24 +687,70 @@ export default function OfficialDashboardPage() {
 
                                 <button
                                   type="button"
-                                  onClick={() => handleAiStatsPlaceholder(biz.name)}
-                                  className="px-3 py-1.5 rounded border border-amber-400 text-amber-700 hover:bg-amber-400 hover:text-white"
+                                  onClick={() => handleViewAiStats(biz)}
+                                  disabled={aiStatsLoadingBusinessId === biz.id}
+                                  className="px-3 py-1.5 rounded border border-amber-400 text-amber-700 hover:bg-amber-400 hover:text-white disabled:opacity-60"
                                 >
-                                  Thống kê bằng AI
+                                  {aiStatsLoadingBusinessId === biz.id ? 'Đang phân tích...' : aiStatsData ? 'Phân tích lại AI' : 'Thống kê bằng AI'}
                                 </button>
                               </div>
                             </td>
                             <td className="px-3 py-3 align-top">
-                              {statsData ? (
-                                <div className="space-y-1 text-xs text-gray-700">
-                                  <p>Tổng lượt review: <span className="font-semibold">{statsData.tongLuotReview}</span></p>
-                                  <p>Điểm trung bình: <span className="font-semibold">{formatAverageRating(statsData.diemTrungBinh)}</span></p>
-                                  <p>Review đầu tiên: {formatDateTime(statsData.reviewDauTien)}</p>
-                                  <p>Review gần nhất: {formatDateTime(statsData.reviewGanNhat)}</p>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-gray-500">Bấm "Xem số lượt review" để hiển thị số liệu.</span>
-                              )}
+                              <div className="space-y-2 text-xs text-gray-700 min-w-[280px]">
+                                {statsData ? (
+                                  <div className="space-y-1 rounded border border-gray-200 bg-gray-50 p-2">
+                                    <p>Tổng lượt review: <span className="font-semibold">{statsData.tongLuotReview}</span></p>
+                                    <p>Điểm trung bình: <span className="font-semibold">{formatAverageRating(statsData.diemTrungBinh)}</span></p>
+                                    <p>Review đầu tiên: {formatDateTime(statsData.reviewDauTien)}</p>
+                                    <p>Review gần nhất: {formatDateTime(statsData.reviewGanNhat)}</p>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-gray-500">Bấm "Xem số lượt review" để hiển thị số liệu.</span>
+                                )}
+
+                                {aiStatsData && (
+                                  <div className="rounded border border-amber-200 bg-amber-50 p-2 space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <span className={`inline-flex text-[11px] rounded border px-2 py-0.5 ${aiSentimentMeta.tone}`}>
+                                        Sentiment: {aiSentimentMeta.label}
+                                      </span>
+                                      <span className={`inline-flex text-[11px] rounded border px-2 py-0.5 ${aiScoreMeta.tone}`}>
+                                        {aiScoreMeta.label}
+                                      </span>
+                                    </div>
+
+                                    <div>
+                                      <p className="text-gray-700">
+                                        Điểm AI tổng quan: <span className="font-semibold">{formatAiScore(aiStatsData.diemTongQuan)}</span> ({formatAiPercent(aiStatsData.diemTongQuan)})
+                                      </p>
+                                      <div className="mt-1 h-2 w-full rounded-full bg-amber-100 overflow-hidden">
+                                        <div className={`h-full ${aiScoreMeta.bar}`} style={{ width: formatAiPercent(aiStatsData.diemTongQuan) }} />
+                                      </div>
+                                    </div>
+
+                                    <p>
+                                      Thuộc tính ảnh hưởng nhất:{' '}
+                                      <span className="font-semibold">
+                                        {aiStatsData.insight?.thuocTinhAnhHuongNhat?.label || aiStatsData.insight?.thuocTinhAnhHuongNhat?.key || 'Chưa có'}
+                                      </span>
+                                    </p>
+
+                                    {aiWarnings.length > 0 && (
+                                      <p className="text-red-700">
+                                        Cảnh báo nổi bật: <span className="font-semibold">{aiWarnings[0].title}</span>
+                                      </p>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => openAiReportModal(aiStatsPayload, biz.name)}
+                                      className="w-full rounded border border-amber-300 bg-white px-2 py-1.5 text-amber-800 hover:bg-amber-100"
+                                    >
+                                      Xem báo cáo AI chi tiết
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         )
@@ -606,6 +892,176 @@ export default function OfficialDashboardPage() {
         </section>
       </main>
 
+      {aiModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/45"
+            aria-label="Đóng popup AI"
+            onClick={() => setAiModal((prev) => ({ ...prev, open: false }))}
+          />
+
+          <section className="relative z-10 w-full max-w-5xl rounded-lg border border-[#e3d8d1] bg-white shadow-2xl max-h-[88vh] overflow-hidden">
+            <div className="bg-gradient-to-r from-[#552104] via-[#8B2500] to-[#c65429] text-white px-5 py-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg md:text-xl font-bold">Báo cáo AI trực quan</h2>
+                <p className="text-sm text-[#ffe6d8] mt-1">Cơ sở: {aiModal.businessName}</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {aiModalResult && (
+                  <span className={`inline-flex text-xs rounded border px-2 py-1 ${aiModalSentimentMeta.tone}`}>
+                    Sentiment: {aiModalSentimentMeta.label}
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setAiModal((prev) => ({ ...prev, open: false }))}
+                  className="h-8 w-8 rounded border border-white/60 hover:bg-white/15"
+                  aria-label="Đóng"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-4 overflow-auto max-h-[calc(88vh-86px)]">
+              {!aiModalResult ? (
+                <p className="text-sm text-gray-500">Chưa có dữ liệu AI để hiển thị.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
+                    <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 space-y-2">
+                      <div className="text-gray-600">Điểm tổng quan</div>
+                      <div className="font-bold text-gray-900 text-lg">
+                        {formatAiScore(aiModalResult.diemTongQuan)} ({formatAiPercent(aiModalResult.diemTongQuan)})
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-gray-200 overflow-hidden">
+                        <div className={`h-full ${aiModalScoreMeta.bar}`} style={{ width: formatAiPercent(aiModalResult.diemTongQuan) }} />
+                      </div>
+                    </div>
+
+                    <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                      <div className="text-gray-600">Mức rủi ro hiện tại</div>
+                      <div className={`inline-flex mt-2 text-xs rounded border px-2 py-1 ${aiModalScoreMeta.tone}`}>
+                        {aiModalScoreMeta.label}
+                      </div>
+                      <p className="text-xs text-gray-600 mt-2">Sentiment tổng thể: {aiModalSentimentMeta.label}</p>
+                    </div>
+
+                    <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                      <div className="text-gray-600">Review hợp lệ cho AI</div>
+                      <div className="font-bold text-gray-900 text-lg">{aiModalInput?.tongReviewHopLeChoModel ?? 0}</div>
+                      <p className="text-xs text-gray-600 mt-1">Tổng review lấy từ DB: {aiModalInput?.tongReviewLayTuDB ?? 0}</p>
+                    </div>
+
+                    <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                      <div className="text-gray-600">Review đã tiền xử lý</div>
+                      <div className="font-bold text-gray-900 text-lg">{aiModalInput?.tongReviewDaTienXuLySuDungChoModel ?? 0}</div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Thuộc tính ảnh hưởng nhất:{' '}
+                        {aiModalResult?.insight?.thuocTinhAnhHuongNhat?.label || aiModalResult?.insight?.thuocTinhAnhHuongNhat?.key || 'Chưa có'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-red-100 bg-[#fff8f7] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-semibold text-[#7d1f00]">Cảnh báo cần chú ý</h3>
+                      <span className="text-xs text-[#7d1f00]">{aiModal.warnings.length} mục</span>
+                    </div>
+
+                    {aiModal.warnings.length === 0 ? (
+                      <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                        Không phát hiện cảnh báo nghiêm trọng trong kỳ phân tích hiện tại.
+                      </div>
+                    ) : (
+                      <div className="mt-2 space-y-2">
+                        {aiModal.warnings.map((warning) => {
+                          const warningMeta = getAiWarningMeta(warning.level)
+
+                          return (
+                            <div key={warning.id} className={`rounded border px-3 py-2 text-sm ${warningMeta.tone}`}>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-semibold">{warning.title}</p>
+                                <span className="text-[11px] px-2 py-0.5 rounded border border-current">{warningMeta.chip}</span>
+                              </div>
+                              <p className="mt-1 text-xs">{warning.detail}</p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                    <h3 className="font-semibold text-gray-900">Điểm thành phần</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                      {aiModalComponentEntries.map((item) => {
+                        const itemMeta = getAiScoreMeta(item.score)
+
+                        return (
+                          <div key={item.key} className="rounded border border-gray-200 bg-gray-50 p-3 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-semibold text-gray-900">{item.label}</p>
+                              <span className={`text-[11px] rounded border px-2 py-0.5 ${itemMeta.tone}`}>{itemMeta.label}</span>
+                            </div>
+                            <p className="text-sm text-gray-700">{formatAiScore(item.score)} ({formatAiPercent(item.score)})</p>
+                            <div className="h-2 w-full rounded-full bg-gray-200 overflow-hidden">
+                              <div className={`h-full ${itemMeta.bar}`} style={{ width: formatAiPercent(item.score) }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-4">
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <h3 className="font-semibold text-gray-900">Review đại diện cần xem lại</h3>
+                      {aiModalRepresentativeReviews.length === 0 ? (
+                        <p className="text-sm text-gray-500 mt-2">Chưa có review đại diện trong kỳ phân tích.</p>
+                      ) : (
+                        <ul className="space-y-2 mt-2">
+                          {aiModalRepresentativeReviews.map((reviewText, index) => (
+                            <li key={`${index}-${reviewText.slice(0, 20)}`} className="rounded border border-gray-200 bg-gray-50 p-2 text-sm text-gray-700">
+                              <span className="font-semibold text-[#7d1f00]">#{index + 1}:</span> {reviewText}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-3">
+                      <h3 className="font-semibold text-gray-900">Từ khóa tiêu cực nổi bật</h3>
+                      {aiModalKeywords.length === 0 ? (
+                        <p className="text-sm text-gray-500 mt-2">Chưa ghi nhận cụm từ tiêu cực nổi bật.</p>
+                      ) : (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {aiModalKeywords.map((keyword) => (
+                            <span
+                              key={keyword}
+                              className="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700"
+                            >
+                              {keyword}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="mt-4 rounded border border-gray-200 bg-gray-50 px-2 py-2 text-xs text-gray-600 break-all">
+                        Endpoint AI: {aiModalInput?.aiEndpoint || 'Không xác định'}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
       {reviewModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           <button
@@ -657,7 +1113,7 @@ export default function OfficialDashboardPage() {
                     <li key={review.id} className="rounded border border-gray-200 bg-white p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="font-semibold text-gray-900">{review.tenNguoiReview || 'Ẩn danh'}</p>
-                        <span className="text-amber-600 font-medium" title={`${review.soSao}/5`}>{formatRatingStars(review.soSao)}</span>
+                        <span className="text-amber-600 font-medium" title={`${review.soSao}/10`}>{formatRatingStars(review.soSao)}</span>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">Thời gian: {formatDateTime(review.thoiDiemReview)}</p>
                       <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap break-words">
