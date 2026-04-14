@@ -1,154 +1,164 @@
-# React + Tailwind + Express Project
+# ML-23KHDL1-Lab
 
-Full-stack web application với kiến trúc MVC:
-- **Frontend**: React 18, Tailwind CSS, Vite
-- **Backend**: Node.js, Express (MVC pattern)
-- **Database**: Supabase (sẽ được tích hợp sau)
+Repository for Vietnamese hotel **Aspect-Based Sentiment Analysis (ABSA)**, including data collection/cleaning pipelines, multiple model implementations, and a demo application.
 
-## 📁 Project Structure
+> This project is primarily a **model/data repo**. The app exists for demonstration/integration and is secondary.
 
+## 1) Repository Focus
+
+Main research target:
+- Multi-aspect sentiment classification on hotel reviews
+- 6 aspects:
+  - `vệ sinh`
+  - `đồ ăn thức uống`
+  - `khách sạn`
+  - `vị trí`
+  - `phòng ốc`
+  - `dịch vụ`
+- 3 sentiment classes per aspect:
+  - `0`: none/not mentioned
+  - `1`: positive
+  - `2`: negative
+
+## 2) Repository Layout
+
+```text
+ML-23KHDL1-Lab/
+├── models/
+│   ├── model_videberta_fine-tune/       # ViDeBERTa + adapters + multipool + MSD
+│   ├── Model_phobert+gru_finetune/      # PhoBERT + BiGRU multi-head pipeline
+│   └── model_svm/                        # SVM baseline notebook + exported model
+├── src/
+│   ├── Model_gan_nhan/                   # Legacy/extended PhoBERT 3-class pipeline
+│   └── scrapy_data/                      # Crawling scripts for metadata/reviews
+├── data/
+│   ├── dataset_vlsp/                     # VLSP hotel ABSA data (processed files)
+│   └── data_crawl/                       # Crawl outputs + filtering/relabel artifacts
+├── application/
+│   ├── backend/                          # Express API (JWT/API key + PostgreSQL)
+│   ├── frontend/                         # React + Vite + Tailwind UI
+│   └── app.py                            # FastAPI wrapper for model inference
+└── tools/
+    └── human-label-editor/               # Labeling support tool
 ```
-├── frontend/              # React frontend application
-│   ├── src/
-│   │   ├── pages/        # Page components
-│   │   ├── components/   # Reusable components
-│   │   ├── App.jsx       # Main app component
-│   │   └── main.jsx      # Entry point
-│   └── package.json
-│
-├── backend/              # Express backend API (MVC)
-│   ├── config/          # Configuration files
-│   ├── controllers/     # Request handlers
-│   ├── services/        # Business logic
-│   ├── models/          # Data models
-│   ├── routes/          # API routes
-│   ├── middlewares/     # Custom middlewares
-│   ├── server.js        # Entry point
-│   └── package.json
-│
-└── README.md
+
+## 3) Model Implementations
+
+### A. ViDeBERTa fine-tuning (primary modern pipeline)
+Path: `models/model_videberta_fine-tune/`
+
+Key files:
+- `train.py`: training loop with early stopping by validation macro-F1
+- `videberta_msd.py`: model (encoder + adapters + multipool + MSD)
+- `evaluate.py`: test evaluation from checkpoint
+- `infer.py`: single-text and batch inference
+- `config.py`: paths, aspects, and hyperparameters
+
+Core characteristics:
+- Backbone: `Fsoft-AIC/videberta-base`
+- 6 shared aspect heads (3-class each)
+- Adapter-based fine-tuning
+- Multi-pooling (CLS + mean + max)
+- Multi-sample dropout (MSD)
+- Class-weighted + smoothed cross-entropy per aspect
+
+Typical usage:
+```bash
+cd models/model_videberta_fine-tune
+python train.py
+python evaluate.py --checkpoint ../best.pt
+python infer.py --text "Khách sạn sạch sẽ, nhân viên thân thiện"
 ```
 
-## 🚀 Getting Started
+### B. PhoBERT + BiGRU fine-tuning
+Path: `models/Model_phobert+gru_finetune/`
 
-### Prerequisites
+Key files:
+- `training.py`
+- `evaluate.py`
+- `download_model.py` (download/save local PhoBERT)
 
-- Node.js (v18 or higher)
-- npm or yarn
+### C. Legacy PhoBERT 3-class workflow
+Path: `src/Model_gan_nhan/`
 
-### 1. Setup Backend
+Key files:
+- `process_3class.py`: preprocess/map labels
+- `train_v2_hygiene_3class.py`: train model
+- `inference_3class.py`: pseudo-label/inference
+- `requirements.txt`
 
-\`\`\`bash
-cd backend
-npm install
+### D. SVM baseline
+Path: `models/model_svm/SVM_Baseline.ipynb`
 
-# Create .env file
+## 4) Data and Labeling Pipeline
+
+Main data areas:
+- VLSP processed files: `data/dataset_vlsp/`
+- Crawled review pipeline + artifacts: `data/data_crawl/pipeline/`
+  - threshold calibration
+  - noisy-sample filtering
+  - relabel pool generation
+  - human-label preparation
+  - final train/val/test merge artifacts
+
+Important scripts:
+- `data/data_crawl/pipeline/scripts/step1_calibrate_threshold.py`
+- `data/data_crawl/pipeline/scripts/step2_filter_results.py`
+- `data/data_crawl/pipeline/scripts/step3_noise_filter_and_relabel_pool.py`
+- `data/data_crawl/pipeline/scripts/step4_prepare_human_label_template.py`
+- `data/data_crawl/pipeline/scripts/step4_relabel_independent_text.py`
+- `data/data_crawl/pipeline/scripts/step5_merge_crawl_only_dataset.py`
+
+## 5) Model Environment Setup
+
+Example Python setup:
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -U pip
+pip install pandas numpy torch transformers datasets scikit-learn tqdm vncorenlp
+```
+
+If you run the legacy pipeline in `src/Model_gan_nhan/`:
+```bash
+pip install -r src/Model_gan_nhan/requirements.txt
+```
+
+## 6) Application (Secondary)
+
+### Backend (`application/backend`)
+- Node.js + Express
+- JWT + API key middleware
+- PostgreSQL via `pg`
+
+```bash
+cd application/backend
+npm ci
 cp .env.example .env
-# Edit .env and add your configuration (optional for now)
-
-# Start the server
 npm run dev
-\`\`\`
-
-The backend will run on http://localhost:5000
-
-### 2. Setup Frontend
-
-\`\`\`bash
-cd frontend
-npm install
-
-# Start the development server
-npm run dev
-\`\`\`
-
-The frontend will run on http://localhost:3000
-
-## 📚 Available Scripts
-
-### Frontend
-- \`npm run dev\` - Start development server
-- \`npm run build\` - Build for production
-- \`npm run preview\` - Preview production build
-- \`npm run lint\` - Run ESLint
-
-### Backend
-- \`npm run dev\` - Start development server with auto-reload
-- \`npm start\` - Start production server
-
-## 🛣️ API Endpoints
-
-**Note**: Tất cả API endpoints (trừ `/`) đều yêu cầu API key trong header `x-api-key`
-
-- `GET /users` - Get all users
-- `GET /users/:id` - Get user by ID
-- `POST /users` - Create new user
-- `PUT /users/:id` - Update user
-- `DELETE /users/:id` - Delete user
-
-**Hiện tại backend sử dụng in-memory data. Khi tích hợp database, data sẽ được lưu trữ persistent.**
-
-## 🏗️ Backend Architecture (MVC)
-
-```
-backend/
-├── config/              # Configuration
-│   ├── env.js          # Environment variables
-│   └── database.js     # Database config
-├── controllers/         # Request handlers
-│   └── userController.js
-├── services/           # Business logic
-│   └── userService.js
-├── models/             # Data models
-│   └── userModel.js
-├── routes/             # API routes
-│   └── userRoutes.js
-├── middlewares/        # Custom middlewares
-│   ├── apiKeyAuth.js
-│   └── errorHandler.js
-└── server.js           # Entry point
 ```
 
-## 🔐 Environment Variables
+### Frontend (`application/frontend`)
+- React + Vite + Tailwind
 
-### Backend (.env)
-\`\`\`
-PORT=5000
-NODE_ENV=development
-API_KEY=my_secret_api_key_123
-SUPABASE_URL=your_supabase_url_when_ready
-SUPABASE_SERVICE_KEY=your_supabase_service_key_when_ready
-\`\`\`
+```bash
+cd application/frontend
+npm ci
+cp .env.example .env
+npm run dev
+```
 
-### Frontend (.env)
-\`\`\`
-VITE_API_KEY=my_secret_api_key_123
-\`\`\`
+## 7) Current Validation Notes
 
-**Important**: API key phải giống nhau ở cả frontend và backend!
+- Frontend build works (`npm run build`).
+- Frontend lint currently reports pre-existing issues in:
+  - `src/components/LoginModal.jsx`
+  - `src/context/AuthContext.jsx`
+- Backend starts after installing dependencies and loading `.env`.
 
-## 🎨 Tech Stack
+## 8) Recommended Starting Point
 
-### Frontend
-- **React 18** - UI library
-- **Vite** - Build tool and dev server
-- **Tailwind CSS** - Utility-first CSS framework
-- **React Router DOM** - Client-side routing (đã cài đặt, chưa sử dụng)
-- **API Key Auth** - Xác thực mỗi request
-
-### Backend
-- **Express** - Web framework
-- **MVC Pattern** - Clean architecture
-- **CORS** - Cross-origin resource sharing
-- **dotenv** - Environment variable management
-
-## 📖 Learn More
-
-- [React Documentation](https://react.dev/)
-- [Tailwind CSS](https://tailwindcss.com/)
-- [Express](https://expressjs.com/)
-- [MVC Pattern](https://en.wikipedia.org/wiki/Model%E2%80%93view%E2%80%93controller)
-
-## 📝 License
-
-MIT
+If your goal is model work, start here:
+1. Prepare/inspect data in `data/data_crawl/pipeline/`.
+2. Train/evaluate in `models/model_videberta_fine-tune/`.
+3. Use `infer.py` or `application/app.py` for inference serving.
