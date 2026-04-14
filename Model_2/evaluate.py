@@ -1,9 +1,4 @@
-"""Evaluate the trained PhoBERT + BiGRU checkpoint on the test split.
-
-The model in `training.py` is trained with `MSELoss`, so its outputs are
-continuous values. For F1 evaluation, we convert each output to the nearest
-class in {0, 1, 2} by rounding and clamping.
-"""
+"""Evaluate the 6-head PhoBERT + BiGRU checkpoint on the test split."""
 
 from __future__ import annotations
 
@@ -14,21 +9,21 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from sklearn.metrics import classification_report, f1_score
+from sklearn.metrics import accuracy_score, classification_report, f1_score
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModel, AutoTokenizer
 
 
 BASE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = BASE_DIR.parent
 
 MODEL_PATH = BASE_DIR / "phobert_local"
 DEFAULT_TEST_FILE = BASE_DIR / "data" / "crawl_only_test.csv"
-DEFAULT_CHECKPOINT = REPO_ROOT / "Model_2" / "phobert_local" / "best_phobert_gru.pth"
+DEFAULT_CHECKPOINT = BASE_DIR / "phobert_local" / "best_phobert_gru_ce.pth"
 
 MAX_LEN = 128
 BATCH_SIZE = 16
 GRU_HIDDEN_DIM = 256
+NUM_CLASSES = 3
 
 LABEL_COLS = [
     "v\u1ec7 sinh_label",
@@ -50,7 +45,7 @@ class HotelReviewDataset(Dataset):
         if missing_cols:
             raise ValueError(f"Missing columns in {csv_file}: {missing_cols}")
 
-        self.data = self.data.dropna(subset=required_cols)
+        self.data = self.data.dropna(subset=required_cols).reset_index(drop=True)
         self.tokenizer = tokenizer
         self.max_len = max_len
 
@@ -60,7 +55,7 @@ class HotelReviewDataset(Dataset):
     def __getitem__(self, idx: int):
         row = self.data.iloc[idx]
         review_text = str(row["Review"])
-        labels = torch.tensor(row[LABEL_COLS].values.astype(float), dtype=torch.float)
+        labels = torch.tensor(row[LABEL_COLS].astype(int).values, dtype=torch.long)
 
         encoding = self.tokenizer(
             review_text,
@@ -73,14 +68,14 @@ class HotelReviewDataset(Dataset):
         )
 
         return {
-            "input_ids": encoding["input_ids"].flatten(),
-            "attention_mask": encoding["attention_mask"].flatten(),
+            "input_ids": encoding["input_ids"].squeeze(0),
+            "attention_mask": encoding["attention_mask"].squeeze(0),
             "labels": labels,
         }
 
 
-class PhoBERT_GRU_Model(nn.Module):
-    def __init__(self, phobert_path, gru_hidden_dim: int, num_labels: int):
+class PhoBERTMultiHeadGRU(nn.Module):
+    def __init__(self, phobert_path: Path, gru_hidden_dim: int, num_labels: int, num_classes: int):
         super().__init__()
 
         self.phobert = AutoModel.from_pretrained(phobert_path)
@@ -93,27 +88,46 @@ class PhoBERT_GRU_Model(nn.Module):
             batch_first=True,
             bidirectional=True,
         )
-        self.classifier = nn.Linear(gru_hidden_dim * 2, num_labels)
+        self.heads = nn.ModuleList(
+            [nn.Linear(gru_hidden_dim * 2, num_classes) for _ in range(num_labels)]
+        )
+
+    @staticmethod
+    def masked_mean_pool(sequence_output: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        mask = attention_mask.unsqueeze(-1).type_as(sequence_output)
+        masked_sum = (sequence_output * mask).sum(dim=1)
+        token_count = mask.sum(dim=1).clamp(min=1.0)
+        return masked_sum / token_count
 
     def forward(self, input_ids, attention_mask):
         phobert_outputs = self.phobert(input_ids=input_ids, attention_mask=attention_mask)
         sequence_output = phobert_outputs.last_hidden_state
-        gru_output, _ = self.gru(sequence_output)
 
-        # The training script uses plain mean pooling. We keep the same behavior
-        # here so evaluation matches the trained checkpoint exactly.
-        pooled_output = torch.mean(gru_output, dim=1)
-        logits = self.classifier(pooled_output)
-        return logits
+        lengths = attention_mask.sum(dim=1).to(dtype=torch.long).cpu()
+        packed = nn.utils.rnn.pack_padded_sequence(
+            sequence_output,
+            lengths,
+            batch_first=True,
+            enforce_sorted=False,
+        )
+        packed_output, _ = self.gru(packed)
+        gru_output, _ = nn.utils.rnn.pad_packed_sequence(
+            packed_output,
+            batch_first=True,
+            total_length=sequence_output.size(1),
+        )
+
+        pooled_output = self.masked_mean_pool(gru_output, attention_mask)
+        return [head(pooled_output) for head in self.heads]
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Evaluate the best checkpoint on the test split.")
+    parser = argparse.ArgumentParser(description="Evaluate the 6-head checkpoint on the test split.")
     parser.add_argument(
         "--checkpoint",
         type=str,
         default=str(DEFAULT_CHECKPOINT),
-        help="Path to best_phobert_gru.pth",
+        help="Path to best_phobert_gru_ce.pth",
     )
     parser.add_argument(
         "--test-csv",
@@ -135,6 +149,10 @@ def parse_args():
     return parser.parse_args()
 
 
+def predict_classes(logits_list):
+    return torch.stack([logits.argmax(dim=-1) for logits in logits_list], dim=1)
+
+
 def evaluate(model, dataloader, device):
     model.eval()
     all_preds = []
@@ -146,15 +164,25 @@ def evaluate(model, dataloader, device):
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
 
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            preds = torch.round(outputs).clamp(min=0, max=2).long()
+            logits_list = model(input_ids=input_ids, attention_mask=attention_mask)
+            preds = predict_classes(logits_list)
 
             all_preds.append(preds.cpu())
-            all_labels.append(labels.cpu().long())
+            all_labels.append(labels.cpu())
 
     y_pred = torch.cat(all_preds, dim=0).numpy()
     y_true = torch.cat(all_labels, dim=0).numpy()
     return y_true, y_pred
+
+
+def load_checkpoint(path: Path, model: nn.Module, device: torch.device):
+    checkpoint = torch.load(path, map_location=device)
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        model.load_state_dict(checkpoint["model_state_dict"])
+        return checkpoint
+
+    model.load_state_dict(checkpoint)
+    return {"model_state_dict": checkpoint}
 
 
 def main():
@@ -182,13 +210,21 @@ def main():
         pin_memory=torch.cuda.is_available(),
     )
 
-    model = PhoBERT_GRU_Model(MODEL_PATH, GRU_HIDDEN_DIM, NUM_LABELS).to(device)
-    state_dict = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(state_dict)
+    model = PhoBERTMultiHeadGRU(MODEL_PATH, GRU_HIDDEN_DIM, NUM_LABELS, NUM_CLASSES).to(device)
+    checkpoint = load_checkpoint(checkpoint_path, model, device)
+    if isinstance(checkpoint, dict) and "epoch" in checkpoint:
+        print(
+            f"Loaded checkpoint from epoch {checkpoint['epoch']} "
+            f"(val mean-aspect F1: {checkpoint.get('val_metrics', {}).get('mean_aspect_macro_f1', float('nan')):.4f})"
+        )
 
     y_true, y_pred = evaluate(model, test_loader, device)
 
     print(f"Test samples: {len(test_dataset)}")
+    flat_acc = accuracy_score(y_true.reshape(-1), y_pred.reshape(-1))
+    exact_match = float(np.all(y_true == y_pred, axis=1).mean())
+    print(f"Overall accuracy: {flat_acc:.4f}")
+    print(f"Exact-match ratio: {exact_match:.4f}")
     print("\nPer-aspect macro-F1:")
     f1_scores = []
     for idx, label_name in enumerate(LABEL_COLS):
