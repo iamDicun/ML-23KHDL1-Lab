@@ -51,6 +51,33 @@ ALTER TABLE IF EXISTS registration_requests
 ALTER TABLE IF EXISTS registration_requests
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
+-- 1.1) New table: registration_request_ratings
+CREATE TABLE IF NOT EXISTS registration_request_ratings (
+    id SERIAL PRIMARY KEY,
+    request_id INTEGER NOT NULL REFERENCES registration_requests(id) ON DELETE CASCADE,
+    citizen_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    satisfaction_level VARCHAR(20) NOT NULL CHECK (satisfaction_level IN ('very_satisfied', 'satisfied', 'not_satisfied')),
+    note TEXT,
+    rated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 1.2) Align registration_request_ratings (ALTER TABLE)
+ALTER TABLE IF EXISTS registration_request_ratings
+    ADD COLUMN IF NOT EXISTS citizen_id INTEGER;
+
+ALTER TABLE IF EXISTS registration_request_ratings
+    ADD COLUMN IF NOT EXISTS note TEXT;
+
+ALTER TABLE IF EXISTS registration_request_ratings
+    ADD COLUMN IF NOT EXISTS rated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE IF EXISTS registration_request_ratings
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE IF EXISTS registration_request_ratings
+    DROP CONSTRAINT IF EXISTS registration_request_ratings_request_id_key;
+
 -- 2) New table: official_daily_tasks
 CREATE TABLE IF NOT EXISTS official_daily_tasks (
     id SERIAL PRIMARY KEY,
@@ -133,6 +160,15 @@ ALTER TABLE IF EXISTS official_documents
 CREATE INDEX IF NOT EXISTS idx_registration_requests_status
     ON registration_requests(status);
 
+CREATE INDEX IF NOT EXISTS idx_registration_request_ratings_level
+    ON registration_request_ratings(satisfaction_level);
+
+CREATE INDEX IF NOT EXISTS idx_registration_request_ratings_rated_at
+    ON registration_request_ratings(rated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_registration_request_ratings_request_id
+    ON registration_request_ratings(request_id);
+
 CREATE INDEX IF NOT EXISTS idx_official_daily_tasks_user_due_status
     ON official_daily_tasks(official_user_id, due_date, status);
 
@@ -151,6 +187,12 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_registration_requests_set_updated_at ON registration_requests;
 CREATE TRIGGER trg_registration_requests_set_updated_at
 BEFORE UPDATE ON registration_requests
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_registration_request_ratings_set_updated_at ON registration_request_ratings;
+CREATE TRIGGER trg_registration_request_ratings_set_updated_at
+BEFORE UPDATE ON registration_request_ratings
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
@@ -206,6 +248,49 @@ WHERE EXISTS (SELECT 1 FROM users WHERE username = 'congdan01')
       SELECT 1
       FROM registration_requests
       WHERE data->>'name' = 'Khach san Pho Co'
+  );
+
+-- 6.1) Seed dossier ratings
+INSERT INTO registration_request_ratings (request_id, citizen_id, satisfaction_level, note)
+SELECT
+    rr.id,
+    rr.citizen_id,
+    'not_satisfied',
+    'Can bo can phan hoi nhanh hon cho ho so dang cho xu ly.'
+FROM registration_requests rr
+WHERE rr.data->>'name' = 'Khach san Anh Sao Mo Rong'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM registration_request_ratings r
+      WHERE r.request_id = rr.id
+  );
+
+INSERT INTO registration_request_ratings (request_id, citizen_id, satisfaction_level, note)
+SELECT
+    rr.id,
+    rr.citizen_id,
+    'satisfied',
+    'Da nhan huong dan bo sung ho so ro rang.'
+FROM registration_requests rr
+WHERE rr.data->>'name' = 'Nha hang Bien Goi 2'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM registration_request_ratings r
+      WHERE r.request_id = rr.id
+  );
+
+INSERT INTO registration_request_ratings (request_id, citizen_id, satisfaction_level, note)
+SELECT
+    rr.id,
+    rr.citizen_id,
+    'very_satisfied',
+    'Thoi gian xu ly nhanh va dung nhu lich hen.'
+FROM registration_requests rr
+WHERE rr.data->>'name' = 'Khach san Pho Co'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM registration_request_ratings r
+      WHERE r.request_id = rr.id
   );
 
 -- 7) Seed today tasks

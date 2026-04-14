@@ -25,7 +25,7 @@ export default function LoginModal({ isOpen, onClose }) {
 
       login({ token: data.token, user: data.user })
       onClose()
-      navigate('/can-bo/quan-ly')
+      navigate('/can-bo/quan-ly?section=can-bo-home')
     } catch (error) {
       setErrorMessage(error.message)
     } finally {

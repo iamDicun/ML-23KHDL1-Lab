@@ -4,19 +4,20 @@ from pydantic import BaseModel
 import sys
 import os
 from pathlib import Path
+import torch
 
-# Thêm thư mục model_code vào sys.path để có thể import
-sys.path.append(str(Path(__file__).parent / "model_code"))
+# Thêm thư mục hf_space vào sys.path nếu cần import từ file nội bộ
+sys.path.append(str(Path(__file__).parent))
 
+# Import logic inference cho PhoBERT + GRU
 from infer import _load_model, _predict_single, _predict_batch
 
 app = FastAPI(
-    title="ViDeBERTa ABSA Hotel API",
-    description="API cho mô hình Aspect-Based Sentiment Analysis trên Hugging Face Spaces",
+    title="PhoBERT + GRU ABSA Hotel API",
+    description="API cho mô hình Aspect-Based Sentiment Analysis (PhoBERT+GRU) trên Hugging Face Spaces Docker",
     version="1.0.0"
 )
 
-# Thêm CORS middleware để nhận request từ các client bên ngoài (frontend, postman, server khác)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,7 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Biến toàn cục để lưu model, tokenizer, cfg, device
+# Global variables
 model = None
 tokenizer = None
 cfg = None
@@ -33,7 +34,7 @@ device = None
 
 class PredictRequest(BaseModel):
     text: str
-    
+
 class PredictBatchRequest(BaseModel):
     texts: list[str]
 
@@ -41,13 +42,12 @@ class PredictBatchRequest(BaseModel):
 async def load_model_on_startup():
     global model, tokenizer, cfg, device
     
-    # Bạn cần chỉ định đường dẫn đến file checkpoint (.pt)
-    # Ví dụ: checkpoint_path = Path(__file__).parent / "model.pt" (thay đổi theo đúng file của bạn)
-    checkpoint_path = Path(__file__).parent / "best.pt" # Update as needed
+    # Chỉ định đường dẫn đến file model (.pt hoặc .pth)
+    checkpoint_path = Path(__file__).parent / "model" / "best_phobert_gru_ce.pth" # Cập nhật lại đường dẫn thực tế
     
     if not checkpoint_path.exists():
         print(f"Lưu ý: Không tìm thấy checkpoint tại {checkpoint_path}")
-        print("Vui lòng cập nhật đường dẫn checkpoint trong file app.py hoặc tải model về trước khi gọi API.")
+        print("Vui lòng cập nhật đường dẫn checkpoint trong file app.py.")
         return
         
     try:
@@ -58,7 +58,7 @@ async def load_model_on_startup():
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to ViDeBERTa ABSA Hotel API"}
+    return {"message": "Welcome to PhoBERT+GRU ABSA Hotel API"}
 
 @app.post("/predict")
 def predict(request: PredictRequest):

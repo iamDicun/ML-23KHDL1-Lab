@@ -49,6 +49,24 @@ export const CongDanController = {
     } catch (err) { next(err) }
   },
 
+  // GET /cong-dan/thong-ke-thu-ly?nam=2026
+  getThongKeThuLy: async (req, res, next) => {
+    try {
+      const { nam } = req.query
+      const result = await CongDanService.getThongKeThuLy(nam)
+      res.json(result)
+    } catch (err) { next(err) }
+  },
+
+  // GET /cong-dan/tra-cuu?q=...&trangThai=...
+  getDanhSachTraCuuHoSo: async (req, res, next) => {
+    try {
+      const { q, trangThai, limit } = req.query
+      const result = await CongDanService.getDanhSachTraCuuHoSo({ q, trangThai, limit })
+      res.json(result)
+    } catch (err) { next(err) }
+  },
+
   // GET /cong-dan/:id/ho-so
   getDanhSachHoSo: async (req, res, next) => {
     try {

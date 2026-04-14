@@ -41,6 +41,25 @@ export const CanBoController = {
     } catch (err) { next(err) }
   },
 
+  // GET /can-bo/ho-so/:id
+  getHoSoChiTiet: async (req, res, next) => {
+    try {
+      const { id } = req.params
+      const result = await CanBoService.getHoSoChiTiet(id)
+      res.json(result)
+    } catch (err) { next(err) }
+  },
+
+  // GET /can-bo/co-so/:businessId/review-thong-ke?fromDate=YYYY-MM-DD&toDate=YYYY-MM-DD
+  getThongKeReviewTheoCoSo: async (req, res, next) => {
+    try {
+      const { businessId } = req.params
+      const { fromDate, toDate } = req.query
+      const result = await CanBoService.getThongKeReviewTheoCoSo({ businessId, fromDate, toDate })
+      res.json(result)
+    } catch (err) { next(err) }
+  },
+
   // PUT /can-bo/ho-so/:id/xu-ly
   xuLyHoSo: async (req, res, next) => {
     try {

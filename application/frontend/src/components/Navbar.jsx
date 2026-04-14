@@ -1,40 +1,93 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { navLinks } from '../data/mockData'
 import LoginModal from './LoginModal'
 import { useAuth } from '../context/AuthContext'
+
+const officialNavLinks = [
+  {
+    label: 'CƠ SỞ ĐĂNG KÝ',
+    children: [
+      {
+        label: 'Danh sách cơ sở',
+        href: '/can-bo/quan-ly?section=can-bo-co-so-dang-ky'
+      },
+      {
+        label: 'Thống kê tình hình hoạt động của cơ sở',
+        href: '/can-bo/quan-ly?section=can-bo-thong-ke-co-so'
+      }
+    ]
+  },
+  {
+    label: 'TIN TỨC, CÔNG VĂN, NGHỊ QUYẾT',
+    href: '/can-bo/quan-ly?section=can-bo-cong-van-nghi-quyet'
+  },
+  {
+    label: 'PHẢN ÁNH KIẾN NGHỊ',
+    href: '/phan-anh-kien-nghi/tra-cuu'
+  },
+  {
+    label: 'THỐNG KÊ ĐÁNH GIÁ',
+    href: '/danh-gia/tong-hop'
+  },
+  {
+    label: 'QUẢN LÝ HỒ SƠ',
+    href: '/can-bo/quan-ly?section=can-bo-quan-ly-ho-so'
+  }
+]
 
 export default function Navbar() {
   const navigate = useNavigate()
   const { user, isAuthenticated, logout } = useAuth()
   const [loginDropdownOpen, setLoginDropdownOpen] = useState(false)
+  const [activeNavDropdown, setActiveNavDropdown] = useState(null)
   const [officialModalOpen, setOfficialModalOpen] = useState(false)
-  const dropdownRef = useRef(null)
+  const loginDropdownRef = useRef(null)
+  const navMenuRef = useRef(null)
+
+  const isExternalLink = (href = '') => /^https?:\/\//i.test(href)
+  const isInternalRoute = (href = '') => typeof href === 'string' && href.startsWith('/')
+  const isOfficialUser = isAuthenticated && user?.role === 'official'
+  const linksToRender = isOfficialUser ? officialNavLinks : navLinks
+  const homeRoute = isOfficialUser ? '/can-bo/quan-ly?section=can-bo-home' : '/'
+
+  const closeNavDropdown = () => setActiveNavDropdown(null)
+  const toggleNavDropdown = (label) => {
+    setActiveNavDropdown((current) => (current === label ? null : label))
+  }
 
   // Đóng dropdown khi click ra ngoài
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+      if (loginDropdownRef.current && !loginDropdownRef.current.contains(e.target)) {
         setLoginDropdownOpen(false)
       }
+
+      if (navMenuRef.current && !navMenuRef.current.contains(e.target)) {
+        setActiveNavDropdown(null)
+      }
     }
+
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
   const handleCitizenLogin = () => {
     setLoginDropdownOpen(false)
+    closeNavDropdown()
     navigate('/dang-nhap/cong-dan')
   }
 
   const handleOfficialLogin = () => {
     setLoginDropdownOpen(false)
+    closeNavDropdown()
     setOfficialModalOpen(true)
   }
 
   const handleLogout = () => {
     const currentRole = user?.role
     logout()
+    closeNavDropdown()
 
     if (currentRole === 'official') {
       setOfficialModalOpen(true)
@@ -80,7 +133,7 @@ export default function Navbar() {
                 <button className="px-5 py-2 border-2 border-[#8B2500] text-[#8B2500] font-semibold text-sm rounded hover:bg-[#8B2500] hover:text-white transition-colors">
                   Đăng ký
                 </button>
-                <div className="relative" ref={dropdownRef}>
+                <div className="relative" ref={loginDropdownRef}>
                   <button
                     onClick={() => setLoginDropdownOpen(!loginDropdownOpen)}
                     className="flex items-center gap-2 px-5 py-2 bg-[#C0392B] text-white font-semibold text-sm rounded hover:bg-[#8B2500] transition-colors"
@@ -129,7 +182,7 @@ export default function Navbar() {
 
       {/* Navigation bar với nền trống đồng */}
       <nav
-        className="relative overflow-hidden"
+        className="relative z-30"
         style={{ backgroundColor: '#8B2500' }}
       >
         {/* Trống đồng image background */}
@@ -140,23 +193,80 @@ export default function Navbar() {
           className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none opacity-30"
         />
         {/* Nav items - căn giữa */}
-        <div className="relative max-w-7xl mx-auto px-4">
+        <div className="relative max-w-7xl mx-auto px-4" ref={navMenuRef}>
           <ul className="flex items-center justify-center">
             <li>
-              <a href="/" className="flex items-center justify-center px-3 py-3 text-white hover:bg-[#6B1A00] transition-colors">
+              <Link to={homeRoute} className="flex items-center justify-center px-3 py-3 text-white hover:bg-[#6B1A00] transition-colors" onClick={closeNavDropdown}>
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
                 </svg>
-              </a>
+              </Link>
             </li>
-            {navLinks.map((link) => (
-              <li key={link.label}>
-                <a
-                  href={link.href}
-                  className="block px-4 py-3 text-white text-xs font-semibold tracking-wide hover:bg-[#6B1A00] transition-colors whitespace-nowrap"
-                >
-                  {link.label}
-                </a>
+            {linksToRender.map((link) => (
+              <li key={link.label} className="relative">
+                {link.children ? (
+                  <>
+                    <button
+                      onClick={() => toggleNavDropdown(link.label)}
+                      className="flex items-center gap-1 px-4 py-3 text-white text-xs font-semibold tracking-wide hover:bg-[#6B1A00] transition-colors whitespace-nowrap"
+                    >
+                      <span>{link.label}</span>
+                      <svg
+                        className={`w-3 h-3 transition-transform ${activeNavDropdown === link.label ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {activeNavDropdown === link.label && (
+                      <div className="absolute left-0 top-full z-50 min-w-[190px] overflow-hidden rounded-b-md border border-gray-200 bg-white shadow-xl">
+                        {link.children.map((child) => (
+                          isInternalRoute(child.href)
+                            ? (
+                              <Link
+                                key={child.label}
+                                to={child.href}
+                                onClick={closeNavDropdown}
+                                className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-[#fdf0e8] hover:text-[#8B2500] transition-colors"
+                              >
+                                {child.label}
+                              </Link>
+                            )
+                            : (
+                              <a
+                                key={child.label}
+                                href={child.href}
+                                onClick={closeNavDropdown}
+                                className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-[#fdf0e8] hover:text-[#8B2500] transition-colors"
+                              >
+                                {child.label}
+                              </a>
+                            )
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : isInternalRoute(link.href) ? (
+                  <Link
+                    to={link.href}
+                    onClick={closeNavDropdown}
+                    className="block px-4 py-3 text-white text-xs font-semibold tracking-wide hover:bg-[#6B1A00] transition-colors whitespace-nowrap"
+                  >
+                    {link.label}
+                  </Link>
+                ) : (
+                  <a
+                    href={link.href}
+                    target={isExternalLink(link.href) ? '_blank' : undefined}
+                    rel={isExternalLink(link.href) ? 'noreferrer' : undefined}
+                    className="block px-4 py-3 text-white text-xs font-semibold tracking-wide hover:bg-[#6B1A00] transition-colors whitespace-nowrap"
+                  >
+                    {link.label}
+                  </a>
+                )}
               </li>
             ))}
           </ul>

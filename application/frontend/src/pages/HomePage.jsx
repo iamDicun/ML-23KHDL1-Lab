@@ -1,10 +1,20 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import StatsTable from '../components/StatsTable'
 import { categories } from '../data/mockData'
 
 export default function HomePage() {
+  const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
+
+  const goToDossierStatusLookup = () => {
+    navigate('/tra-cuu-tinh-trang-ho-so')
+  }
+
+  const goToOnlinePublicServices = () => {
+    navigate('/dich-vu-cong-truc-tuyen')
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -41,13 +51,21 @@ export default function HomePage() {
 
           {/* Action buttons */}
           <div className="w-full grid grid-cols-2 gap-4">
-            <button className="flex items-center justify-center gap-3 bg-[#E8A020] hover:bg-[#C8880E] text-[#4A2800] font-bold py-4 px-6 rounded transition-colors shadow">
+            <button
+              type="button"
+              onClick={goToDossierStatusLookup}
+              className="flex items-center justify-center gap-3 bg-[#E8A020] hover:bg-[#C8880E] text-[#4A2800] font-bold py-4 px-6 rounded transition-colors shadow"
+            >
               <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
               </svg>
               <span className="text-sm uppercase tracking-wider">Tra Cứu Tình Trạng Hồ Sơ</span>
             </button>
-            <button className="flex items-center justify-center gap-3 bg-[#E8A020] hover:bg-[#C8880E] text-[#4A2800] font-bold py-4 px-6 rounded transition-colors shadow">
+            <button
+              type="button"
+              onClick={goToOnlinePublicServices}
+              className="flex items-center justify-center gap-3 bg-[#E8A020] hover:bg-[#C8880E] text-[#4A2800] font-bold py-4 px-6 rounded transition-colors shadow"
+            >
               <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
               </svg>
@@ -70,15 +88,16 @@ export default function HomePage() {
               <ul className="space-y-2">
                 {cat.items.map((item) => (
                   <li key={item.id}>
-                    <a
-                      href="#"
-                      className="flex items-start gap-2 p-2.5 border border-gray-200 rounded bg-white hover:border-[#C04000] hover:bg-[#FDF8F5] transition-colors group"
+                    <button
+                      type="button"
+                      onClick={goToOnlinePublicServices}
+                      className="w-full text-left flex items-start gap-2 p-2.5 border border-gray-200 rounded bg-white hover:border-[#C04000] hover:bg-[#FDF8F5] transition-colors group"
                     >
                       <span className="text-base mt-0.5 flex-shrink-0">{item.icon}</span>
                       <span className="text-sm text-gray-700 group-hover:text-[#8B2500] transition-colors leading-snug">
                         {item.label}
                       </span>
-                    </a>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -89,7 +108,7 @@ export default function HomePage() {
 
       {/* Stats section */}
       <div className="bg-white border-t border-gray-200">
-        <StatsTable />
+        <StatsTable showChart={false} />
       </div>
 
       {/* Footer */}

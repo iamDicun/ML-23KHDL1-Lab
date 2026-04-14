@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS official_daily_tasks CASCADE;
 DROP TABLE IF EXISTS business_insights_summary CASCADE;
 DROP TABLE IF EXISTS ai_score_history CASCADE;
 DROP TABLE IF EXISTS ai_predictions CASCADE;
+DROP TABLE IF EXISTS registration_request_ratings CASCADE;
 DROP TABLE IF EXISTS customer_reviews CASCADE;
 DROP TABLE IF EXISTS registration_requests CASCADE;
 DROP TABLE IF EXISTS business_documents CASCADE;
@@ -84,6 +85,16 @@ CREATE TABLE registration_requests (
     status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'additional_info_required')),
     official_note TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE registration_request_ratings (
+    id SERIAL PRIMARY KEY,
+    request_id INTEGER NOT NULL REFERENCES registration_requests(id) ON DELETE CASCADE,
+    citizen_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    satisfaction_level VARCHAR(20) NOT NULL CHECK (satisfaction_level IN ('very_satisfied', 'satisfied', 'not_satisfied')),
+    note TEXT,
+    rated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -186,6 +197,9 @@ CREATE INDEX idx_businesses_district ON businesses(district);
 CREATE INDEX idx_business_documents_business_id ON business_documents(business_id);
 CREATE INDEX idx_registration_requests_citizen_id ON registration_requests(citizen_id);
 CREATE INDEX idx_registration_requests_status ON registration_requests(status);
+CREATE INDEX idx_registration_request_ratings_request_id ON registration_request_ratings(request_id);
+CREATE INDEX idx_registration_request_ratings_level ON registration_request_ratings(satisfaction_level);
+CREATE INDEX idx_registration_request_ratings_rated_at ON registration_request_ratings(rated_at DESC);
 CREATE INDEX idx_customer_reviews_business_id ON customer_reviews(business_id);
 CREATE INDEX idx_ai_score_history_business_id_type_time ON ai_score_history(business_id, score_type, evaluated_at DESC);
 CREATE INDEX idx_notifications_user_id_read ON notifications(user_id, is_read);
@@ -214,6 +228,11 @@ EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER trg_registration_requests_set_updated_at
 BEFORE UPDATE ON registration_requests
+FOR EACH ROW
+EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER trg_registration_request_ratings_set_updated_at
+BEFORE UPDATE ON registration_request_ratings
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
@@ -249,6 +268,21 @@ INSERT INTO registration_requests (citizen_id, request_type, data, status, offic
 (2, 1, '{"name":"Khach san Anh Sao Mo Rong","address":"123 Nguyen Hue, Quan 1"}', 'pending', NULL),
 (3, 2, '{"name":"Nha hang Bien Goi 2","address":"89 Hai Ba Trung, Quan 1"}', 'additional_info_required', 'Can bo sung giay to PCCC va hinh anh mat bang.'),
 (2, 1, '{"name":"Khach san Pho Co","address":"17 Le Loi, Quan 1"}', 'approved', 'Da du dieu kien cap phep.');
+
+INSERT INTO registration_request_ratings (request_id, citizen_id, satisfaction_level, note)
+SELECT rr.id, rr.citizen_id, 'not_satisfied', 'Can bo can phan hoi nhanh hon cho ho so dang cho xu ly.'
+FROM registration_requests rr
+WHERE rr.data->>'name' = 'Khach san Anh Sao Mo Rong';
+
+INSERT INTO registration_request_ratings (request_id, citizen_id, satisfaction_level, note)
+SELECT rr.id, rr.citizen_id, 'satisfied', 'Da nhan huong dan bo sung ho so ro rang.'
+FROM registration_requests rr
+WHERE rr.data->>'name' = 'Nha hang Bien Goi 2';
+
+INSERT INTO registration_request_ratings (request_id, citizen_id, satisfaction_level, note)
+SELECT rr.id, rr.citizen_id, 'very_satisfied', 'Thoi gian xu ly nhanh va dung nhu lich hen.'
+FROM registration_requests rr
+WHERE rr.data->>'name' = 'Khach san Pho Co';
 
 INSERT INTO customer_reviews (business_id, customer_name, rating_star, comment) VALUES
 (1, 'Khach A', 1, 'Phong rat ban, co mui am moc o goc tuong va ga giuong khong duoc thay moi. Thai do nhan vien cung binh thuong.'),

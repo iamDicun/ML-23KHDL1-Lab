@@ -1,17 +1,38 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import { apiClient } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 
-const formatDate = (value) => {
-  if (!value) return '-'
-  return new Date(value).toLocaleDateString('vi-VN')
-}
+const SECTION_HOME = 'can-bo-home'
+const SECTION_BUSINESSES = 'can-bo-co-so-dang-ky'
+const SECTION_BUSINESS_STATS = 'can-bo-thong-ke-co-so'
+const SECTION_DOCUMENTS = 'can-bo-cong-van-nghi-quyet'
+const SECTION_REQUESTS = 'can-bo-quan-ly-ho-so'
 
-const formatDateTime = (value) => {
-  if (!value) return '-'
-  return new Date(value).toLocaleString('vi-VN')
+const VALID_SECTIONS = [SECTION_HOME, SECTION_BUSINESSES, SECTION_BUSINESS_STATS, SECTION_DOCUMENTS, SECTION_REQUESTS]
+
+const SECTION_META = {
+  [SECTION_HOME]: {
+    title: 'Danh Sách Việc Cần Làm Hôm Nay',
+    subtitle: 'Hiển thị các công việc ưu tiên trong ngày dành cho cán bộ.'
+  },
+  [SECTION_BUSINESSES]: {
+    title: 'Cơ Sở Kinh Doanh Đang Đăng Ký',
+    subtitle: 'Danh sách cơ sở trong hệ thống để theo dõi và kiểm tra nhanh.'
+  },
+  [SECTION_BUSINESS_STATS]: {
+    title: 'Thống Kê Tình Hình Hoạt Động Của Cơ Sở',
+    subtitle: 'Lọc theo ngày, xem số lượt review của từng cơ sở và sẵn sàng cho thống kê AI.'
+  },
+  [SECTION_DOCUMENTS]: {
+    title: 'Tin Tức, Công Văn, Nghị Quyết',
+    subtitle: 'Tổng hợp văn bản và bản tin mới phục vụ xử lý nghiệp vụ.'
+  },
+  [SECTION_REQUESTS]: {
+    title: 'Quản Lý Hồ Sơ Cần Xử Lý',
+    subtitle: 'Theo dõi hồ sơ, cập nhật trạng thái và mở chi tiết nội dung hồ sơ.'
+  }
 }
 
 const statusBadgeClass = (status) => {
@@ -29,23 +50,60 @@ const statusBadgeClass = (status) => {
   }
 }
 
+const businessStatusLabel = (status) => {
+  const normalized = String(status || '').trim().toLowerCase()
+
+  if (normalized === 'active') return 'Đang hoạt động'
+  if (normalized === 'inactive') return 'Ngừng hoạt động'
+  if (normalized === 'suspended') return 'Tạm dừng'
+  if (normalized === 'under_inspection') return 'Đang kiểm tra'
+
+  return status || 'Chưa cập nhật'
+}
+
 const priorityClass = (priority) => {
   switch (priority) {
     case 'high':
-      return 'text-red-700'
+      return 'text-red-700 bg-red-50 border-red-200'
     case 'medium':
-      return 'text-amber-700'
+      return 'text-amber-700 bg-amber-50 border-amber-200'
     default:
-      return 'text-gray-700'
+      return 'text-gray-700 bg-gray-50 border-gray-200'
   }
 }
 
+const formatDate = (value) => {
+  if (!value) return '-'
+  return new Date(value).toLocaleDateString('vi-VN')
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  return new Date(value).toLocaleString('vi-VN')
+}
+
+const formatAverageRating = (value) => {
+  if (value === null || value === undefined) return 'Chưa có'
+  return `${Number(value).toFixed(2)} / 5`
+}
+
+const formatRatingStars = (value) => {
+  const normalized = Math.max(0, Math.min(5, Number(value) || 0))
+  return `${'★'.repeat(normalized)}${'☆'.repeat(5 - normalized)}`
+}
+
+const toRequestCode = (requestId) => `HS-${String(requestId).padStart(6, '0')}`
+
 export default function OfficialDashboardPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, isAuthenticated } = useAuth()
 
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
+  const [updateNotice, setUpdateNotice] = useState({ type: '', text: '' })
+  const [updatingRequestId, setUpdatingRequestId] = useState(null)
+
   const [dashboard, setDashboard] = useState({
     overview: {
       totalBusinesses: 0,
@@ -57,137 +115,407 @@ export default function OfficialDashboardPage() {
     requests: [],
     requestStatusSummary: [],
     todayTasks: [],
-    documents: [],
-    aiFeature: {
-      enabled: false,
-      label: 'AI dự đoán xu hướng (sẽ bổ sung sau)'
-    }
+    documents: []
   })
 
   const [selectedStatus, setSelectedStatus] = useState('all')
+  const [requestStatusDrafts, setRequestStatusDrafts] = useState({})
+  const [requestNoteDrafts, setRequestNoteDrafts] = useState({})
+  const [reviewStatsFilters, setReviewStatsFilters] = useState({ fromDate: '', toDate: '' })
+  const [reviewStatsByBusiness, setReviewStatsByBusiness] = useState({})
+  const [reviewStatsLoadingBusinessId, setReviewStatsLoadingBusinessId] = useState(null)
+  const [reviewStatsError, setReviewStatsError] = useState('')
+  const [aiStatsNotice, setAiStatsNotice] = useState('')
+  const [reviewModal, setReviewModal] = useState({
+    open: false,
+    businessName: '',
+    thongKeReview: null,
+    danhSachReview: [],
+    boLoc: { tuNgay: null, denNgay: null }
+  })
+
+  const rawSection = useMemo(() => new URLSearchParams(location.search).get('section'), [location.search])
+  const activeSection = VALID_SECTIONS.includes(rawSection) ? rawSection : SECTION_HOME
+  const sectionMeta = SECTION_META[activeSection]
+
+  const isOfficial = isAuthenticated && user?.role === 'official'
+
+  const loadDashboard = async () => {
+    setErrorMessage('')
+    setLoading(true)
+
+    try {
+      const data = await apiClient.get('/can-bo/dashboard')
+      setDashboard(data)
+      setRequestStatusDrafts((data.requests || []).reduce((acc, item) => {
+        acc[item.id] = item.status
+        return acc
+      }, {}))
+      setRequestNoteDrafts((data.requests || []).reduce((acc, item) => {
+        acc[item.id] = item.officialNote || ''
+        return acc
+      }, {}))
+    } catch (error) {
+      setErrorMessage(error.message || 'Không thể tải dữ liệu quản lý cán bộ.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const fetchDashboard = async () => {
-      setErrorMessage('')
-      setLoading(true)
-      try {
-        const data = await apiClient.get('/can-bo/dashboard')
-        setDashboard(data)
-      } catch (error) {
-        setErrorMessage(error.message)
-      } finally {
-        setLoading(false)
+    loadDashboard()
+  }, [])
+
+  useEffect(() => {
+    if (activeSection !== SECTION_REQUESTS && updateNotice.text) {
+      setUpdateNotice({ type: '', text: '' })
+    }
+    if (activeSection !== SECTION_BUSINESS_STATS) {
+      if (reviewStatsError) setReviewStatsError('')
+      if (aiStatsNotice) setAiStatsNotice('')
+      if (reviewModal.open) {
+        setReviewModal((prev) => ({ ...prev, open: false }))
       }
     }
-
-    fetchDashboard()
-  }, [])
+  }, [activeSection, updateNotice.text, reviewStatsError, aiStatsNotice, reviewModal.open])
 
   const statusOptions = useMemo(() => {
     return [{ status: 'all', label: 'Tất cả', count: dashboard.requests.length }, ...dashboard.requestStatusSummary]
-  }, [dashboard])
+  }, [dashboard.requests.length, dashboard.requestStatusSummary])
 
   const filteredRequests = useMemo(() => {
     if (selectedStatus === 'all') return dashboard.requests
     return dashboard.requests.filter((item) => item.status === selectedStatus)
   }, [dashboard.requests, selectedStatus])
 
-  const isOfficial = isAuthenticated && user?.role === 'official'
+  const handleUpdateRequestStatus = async (requestId) => {
+    const draftStatus = requestStatusDrafts[requestId]
+    const draftNote = requestNoteDrafts[requestId]
+
+    if (!draftStatus) return
+
+    setUpdatingRequestId(requestId)
+    setUpdateNotice({ type: '', text: '' })
+
+    try {
+      const result = await apiClient.put(`/can-bo/ho-so/${requestId}/xu-ly`, {
+        trangThai: draftStatus,
+        ghiChu: draftNote
+      })
+
+      setUpdateNotice({
+        type: 'success',
+        text: result.message || 'Cập nhật trạng thái hồ sơ thành công.'
+      })
+      await loadDashboard()
+    } catch (error) {
+      setUpdateNotice({
+        type: 'error',
+        text: error.message || 'Không thể cập nhật trạng thái hồ sơ.'
+      })
+    } finally {
+      setUpdatingRequestId(null)
+    }
+  }
+
+  const handleReviewFilterChange = (field, value) => {
+    setReviewStatsFilters((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleViewReviewStats = async (business) => {
+    const businessId = business.id
+
+    if (reviewStatsFilters.fromDate && reviewStatsFilters.toDate && reviewStatsFilters.fromDate > reviewStatsFilters.toDate) {
+      setReviewStatsError('Khoảng ngày không hợp lệ: Từ ngày phải nhỏ hơn hoặc bằng Đến ngày.')
+      return
+    }
+
+    setReviewStatsError('')
+    setAiStatsNotice('')
+    setReviewStatsLoadingBusinessId(businessId)
+
+    try {
+      const query = new URLSearchParams()
+      if (reviewStatsFilters.fromDate) query.set('fromDate', reviewStatsFilters.fromDate)
+      if (reviewStatsFilters.toDate) query.set('toDate', reviewStatsFilters.toDate)
+
+      const queryString = query.toString()
+      const endpoint = `/can-bo/co-so/${businessId}/review-thong-ke${queryString ? `?${queryString}` : ''}`
+      const data = await apiClient.get(endpoint)
+
+      setReviewStatsByBusiness((prev) => ({
+        ...prev,
+        [businessId]: data
+      }))
+
+      setReviewModal({
+        open: true,
+        businessName: data?.coSo?.tenCoSo || business.name,
+        thongKeReview: data?.thongKeReview || null,
+        danhSachReview: data?.danhSachReview || [],
+        boLoc: data?.boLoc || { tuNgay: null, denNgay: null }
+      })
+    } catch (error) {
+      setReviewStatsError(error.message || 'Không thể tải thống kê review của cơ sở này.')
+    } finally {
+      setReviewStatsLoadingBusinessId(null)
+    }
+  }
+
+  const handleAiStatsPlaceholder = (businessName) => {
+    setAiStatsNotice(`Chức năng thống kê bằng AI cho cơ sở "${businessName}" đang được phát triển.`)
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#f5f6fa]">
       <Navbar />
 
-      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
-        <div className="bg-white border border-gray-200 rounded-lg p-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Trang Quản Lý Cán Bộ</h1>
-              <p className="text-sm text-gray-600 mt-1">
-                Theo dõi cơ sở kinh doanh, hồ sơ xử lý và công việc trong ngày.
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled
-              className="px-4 py-2 rounded bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed"
-              title="Tính năng AI dự đoán xu hướng sẽ được bổ sung ở bước sau"
-            >
-              {dashboard.aiFeature?.label || 'AI dự đoán xu hướng (sẽ bổ sung sau)'}
-            </button>
+      <main className="max-w-7xl mx-auto px-4 py-7 space-y-5">
+        <section className="rounded-lg border border-[#e3d8d1] bg-white overflow-hidden">
+          <div className="bg-gradient-to-r from-[#8B2500] via-[#a53a13] to-[#b9522a] text-white px-5 py-4">
+            <h1 className="text-xl md:text-2xl font-bold uppercase tracking-wide">{sectionMeta.title}</h1>
+            <p className="text-sm text-[#fcebdc] mt-1">{sectionMeta.subtitle}</p>
           </div>
 
           {!isOfficial && (
-            <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Bạn chưa đăng nhập tài khoản cán bộ. Vui lòng đăng nhập để tải dữ liệu quản lý.
+            <div className="m-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Bạn chưa đăng nhập tài khoản cán bộ. Vui lòng đăng nhập để sử dụng chức năng quản lý.
             </div>
           )}
 
           {errorMessage && (
-            <div className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="m-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {errorMessage}
             </div>
           )}
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500">Cơ sở kinh doanh</div>
-            <div className="text-2xl font-bold text-gray-900 mt-1">{dashboard.overview.totalBusinesses}</div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500">Tổng hồ sơ</div>
-            <div className="text-2xl font-bold text-gray-900 mt-1">{dashboard.overview.totalRequests}</div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500">Hồ sơ chờ xử lý</div>
-            <div className="text-2xl font-bold text-amber-700 mt-1">{dashboard.overview.pendingRequests}</div>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="text-xs uppercase tracking-wide text-gray-500">Việc cần làm hôm nay</div>
-            <div className="text-2xl font-bold text-blue-700 mt-1">{dashboard.overview.todayTasks}</div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <section className="bg-white border border-gray-200 rounded-lg">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-800">Cơ Sở Kinh Doanh</h2>
-              <span className="text-xs text-gray-500">Mới nhất</span>
+          {activeSection === SECTION_REQUESTS && updateNotice.text && (
+            <div className={`m-4 rounded border px-3 py-2 text-sm ${updateNotice.type === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>
+              {updateNotice.text}
             </div>
-            <div className="max-h-[460px] overflow-auto">
-              {loading ? (
-                <p className="px-4 py-5 text-sm text-gray-500">Đang tải dữ liệu...</p>
-              ) : dashboard.businesses.length === 0 ? (
-                <p className="px-4 py-5 text-sm text-gray-500">Chưa có cơ sở kinh doanh nào.</p>
+          )}
+
+          {loading && (
+            <p className="px-5 pb-5 text-sm text-gray-500">Đang tải dữ liệu...</p>
+          )}
+
+          {!loading && activeSection === SECTION_HOME && (
+            <div className="px-5 pb-5">
+              {dashboard.todayTasks.length === 0 ? (
+                <p className="text-sm text-gray-500">Hôm nay chưa có công việc nào được giao.</p>
               ) : (
-                <ul className="divide-y divide-gray-100">
-                  {dashboard.businesses.map((biz) => (
-                    <li key={biz.id} className="px-4 py-3">
-                      <div className="flex items-start justify-between gap-3">
+                <ul className="space-y-3">
+                  {dashboard.todayTasks.map((task) => (
+                    <li key={task.id} className="rounded-md border border-gray-200 bg-[#fafafa] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
-                          <div className="font-semibold text-gray-900">{biz.name}</div>
-                          <div className="text-xs text-gray-600 mt-1">{biz.business_type} • {biz.district || 'Chưa rõ quận'} • {biz.province_city}</div>
-                          <div className="text-xs text-gray-500 mt-1">{biz.address}</div>
+                          <h3 className="font-semibold text-gray-900">{task.title}</h3>
+                          <p className="text-sm text-gray-600 mt-1">{task.description || 'Không có mô tả'}</p>
                         </div>
-                        <span className="text-[11px] rounded border px-2 py-1 bg-gray-100 text-gray-700 border-gray-200 whitespace-nowrap">
-                          {biz.status}
+                        <span className={`inline-flex text-xs border px-2 py-1 rounded ${priorityClass(task.priority)}`}>
+                          {task.priorityLabel}
                         </span>
                       </div>
-                      <div className="text-[11px] text-gray-500 mt-2">
-                        Chủ cơ sở: {biz.owner_name || 'Chưa có'} • Cấp phép: {biz.license_number || 'N/A'}
+                      <div className="text-xs text-gray-500 mt-3">
+                        Hạn xử lý: {formatDate(task.dueDate)} {task.dueTime ? `• ${task.dueTime}` : ''} • Trạng thái: {task.statusLabel}
                       </div>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
-          </section>
+          )}
 
-          <section className="bg-white border border-gray-200 rounded-lg">
-            <div className="px-4 py-3 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-800">Quản Lý Hồ Sơ</h2>
-              <div className="mt-3 flex flex-wrap gap-2">
+          {!loading && activeSection === SECTION_BUSINESSES && (
+            <div className="px-5 pb-5">
+              {dashboard.businesses.length === 0 ? (
+                <p className="text-sm text-gray-500">Chưa có cơ sở kinh doanh nào trong hệ thống.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {dashboard.businesses.map((biz) => (
+                    <article key={biz.id} className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+                      <div className="px-4 py-3 bg-[#f9efe9] border-b border-[#edd5c7]">
+                        <h3 className="font-semibold text-[#6f2a11] line-clamp-1">{biz.name}</h3>
+                        <p className="text-xs text-[#8b5d4a] mt-1">{biz.business_type}</p>
+                      </div>
+                      <div className="p-4 text-sm space-y-2">
+                        <p className="text-gray-700"><span className="font-medium">Địa chỉ:</span> {biz.address}</p>
+                        <p className="text-gray-600"><span className="font-medium">Khu vực:</span> {biz.district || 'Chưa rõ quận'} • {biz.province_city}</p>
+                        <p className="text-gray-600"><span className="font-medium">Chủ cơ sở:</span> {biz.owner_name || 'Chưa cập nhật'}</p>
+                        <p className="text-gray-600"><span className="font-medium">Số phép:</span> {biz.license_number || 'Chưa có'}</p>
+                        <span className="inline-flex text-xs rounded border border-gray-200 bg-gray-50 px-2 py-1 text-gray-700">
+                          Trạng thái: {businessStatusLabel(biz.status)}
+                        </span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!loading && activeSection === SECTION_BUSINESS_STATS && (
+            <div className="px-5 pb-5 space-y-4">
+              <div className="rounded-md border border-[#edd5c7] bg-[#fdf7f3] p-3">
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                  <label className="text-sm text-gray-700">
+                    Từ ngày
+                    <input
+                      type="date"
+                      value={reviewStatsFilters.fromDate}
+                      onChange={(e) => handleReviewFilterChange('fromDate', e.target.value)}
+                      className="mt-1 h-9 w-full rounded border border-gray-300 px-2 text-sm"
+                    />
+                  </label>
+
+                  <label className="text-sm text-gray-700">
+                    Đến ngày
+                    <input
+                      type="date"
+                      value={reviewStatsFilters.toDate}
+                      onChange={(e) => handleReviewFilterChange('toDate', e.target.value)}
+                      className="mt-1 h-9 w-full rounded border border-gray-300 px-2 text-sm"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewStatsFilters({ fromDate: '', toDate: '' })
+                      setReviewStatsByBusiness({})
+                      setReviewStatsError('')
+                    }}
+                    className="h-9 px-3 rounded border border-gray-300 text-sm text-gray-700 hover:border-[#8B2500] hover:text-[#8B2500]"
+                  >
+                    Xóa bộ lọc
+                  </button>
+                </div>
+              </div>
+
+              {reviewStatsError && (
+                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {reviewStatsError}
+                </div>
+              )}
+
+              {aiStatsNotice && (
+                <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  {aiStatsNotice}
+                </div>
+              )}
+
+              {dashboard.businesses.length === 0 ? (
+                <p className="text-sm text-gray-500">Chưa có cơ sở kinh doanh nào để thống kê.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border border-gray-200">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-[#f9efe9]">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Cơ sở</th>
+                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Địa chỉ</th>
+                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Trạng thái</th>
+                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Thao tác</th>
+                        <th className="px-3 py-2 text-left font-semibold text-[#6f2a11]">Kết quả review</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {dashboard.businesses.map((biz) => {
+                        const statsData = reviewStatsByBusiness[biz.id]?.thongKeReview
+
+                        return (
+                          <tr key={biz.id}>
+                            <td className="px-3 py-3 align-top">
+                              <p className="font-semibold text-gray-900">{biz.name}</p>
+                              <p className="text-xs text-gray-500 mt-1">{biz.business_type}</p>
+                            </td>
+                            <td className="px-3 py-3 align-top text-gray-700">{biz.address}</td>
+                            <td className="px-3 py-3 align-top">
+                              <span className="inline-flex text-xs rounded border border-gray-200 bg-gray-50 px-2 py-1 text-gray-700">
+                                {businessStatusLabel(biz.status)}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleViewReviewStats(biz)}
+                                  disabled={reviewStatsLoadingBusinessId === biz.id}
+                                  className="px-3 py-1.5 rounded border border-[#8B2500] text-[#8B2500] hover:bg-[#8B2500] hover:text-white disabled:opacity-60"
+                                >
+                                  {reviewStatsLoadingBusinessId === biz.id ? 'Đang tải...' : 'Xem số lượt review'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleAiStatsPlaceholder(biz.name)}
+                                  className="px-3 py-1.5 rounded border border-amber-400 text-amber-700 hover:bg-amber-400 hover:text-white"
+                                >
+                                  Thống kê bằng AI
+                                </button>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              {statsData ? (
+                                <div className="space-y-1 text-xs text-gray-700">
+                                  <p>Tổng lượt review: <span className="font-semibold">{statsData.tongLuotReview}</span></p>
+                                  <p>Điểm trung bình: <span className="font-semibold">{formatAverageRating(statsData.diemTrungBinh)}</span></p>
+                                  <p>Review đầu tiên: {formatDateTime(statsData.reviewDauTien)}</p>
+                                  <p>Review gần nhất: {formatDateTime(statsData.reviewGanNhat)}</p>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-500">Bấm "Xem số lượt review" để hiển thị số liệu.</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!loading && activeSection === SECTION_DOCUMENTS && (
+            <div className="px-5 pb-5">
+              {dashboard.documents.length === 0 ? (
+                <p className="text-sm text-gray-500">Chưa có tin tức/công văn/nghị quyết.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {dashboard.documents.map((doc) => (
+                    <li key={doc.id} className="rounded-md border border-gray-200 bg-[#fcfcfc] p-4">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="text-[11px] px-2 py-0.5 rounded border border-gray-200 bg-gray-100 text-gray-700">{doc.categoryLabel}</span>
+                        {doc.isPinned && <span className="text-[11px] px-2 py-0.5 rounded border border-red-200 bg-red-50 text-red-700">Ưu tiên</span>}
+                      </div>
+                      <h3 className="font-semibold text-gray-900">{doc.title}</h3>
+                      <p className="text-sm text-gray-600 mt-1">{doc.summary || 'Không có tóm tắt'}</p>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                        <span>
+                          {doc.documentNumber ? `${doc.documentNumber} • ` : ''}
+                          {doc.issuedBy || 'Đơn vị ban hành'} • {formatDate(doc.publishedAt)}
+                        </span>
+                        {doc.externalUrl && (
+                          <a
+                            href={doc.externalUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 rounded border border-[#8B2500] text-[#8B2500] hover:bg-[#8B2500] hover:text-white transition-colors"
+                          >
+                            Mở văn bản
+                          </a>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {!loading && activeSection === SECTION_REQUESTS && (
+            <div className="px-5 pb-5 space-y-4">
+              <div className="flex flex-wrap gap-2">
                 {statusOptions.map((item) => (
                   <button
                     key={item.status}
@@ -203,119 +531,138 @@ export default function OfficialDashboardPage() {
                   </button>
                 ))}
               </div>
-            </div>
 
-            <div className="max-h-[460px] overflow-auto">
-              {loading ? (
-                <p className="px-4 py-5 text-sm text-gray-500">Đang tải dữ liệu...</p>
-              ) : filteredRequests.length === 0 ? (
-                <p className="px-4 py-5 text-sm text-gray-500">Không có hồ sơ phù hợp trạng thái.</p>
+              {filteredRequests.length === 0 ? (
+                <p className="text-sm text-gray-500">Không có hồ sơ phù hợp trạng thái đã chọn.</p>
               ) : (
-                <ul className="divide-y divide-gray-100">
-                  {filteredRequests.map((item) => (
-                    <li key={item.id} className="px-4 py-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-semibold text-gray-900">#{item.id} • {item.requestType}</div>
-                          <div className="text-xs text-gray-600 mt-1">{item.businessName}</div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Người nộp: {item.citizen.fullName} ({item.citizen.phone || 'N/A'})
-                          </div>
-                        </div>
-                        <span className={`text-[11px] rounded border px-2 py-1 whitespace-nowrap ${statusBadgeClass(item.status)}`}>
-                          {item.statusLabel}
-                        </span>
-                      </div>
+                <ul className="space-y-3">
+                  {filteredRequests.map((item) => {
+                    const draftStatus = requestStatusDrafts[item.id] || item.status
+                    const draftNote = requestNoteDrafts[item.id] ?? ''
+                    const currentNote = item.officialNote || ''
+                    const isUnchanged = draftStatus === item.status && draftNote.trim() === currentNote.trim()
 
-                      <div className="mt-2 flex items-center justify-between gap-3">
-                        <div className="text-[11px] text-gray-500">Nộp: {formatDateTime(item.submittedAt)}</div>
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/can-bo/ho-so/${item.id}`)}
-                          className="text-xs px-3 py-1.5 rounded border border-[#8B2500] text-[#8B2500] hover:bg-[#8B2500] hover:text-white transition-colors"
-                        >
-                          Chi tiết hồ sơ
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <section className="bg-white border border-gray-200 rounded-lg">
-            <div className="px-4 py-3 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-800">Công Việc Cần Giải Quyết Trong Ngày</h2>
-            </div>
-            <div className="max-h-[320px] overflow-auto">
-              {loading ? (
-                <p className="px-4 py-5 text-sm text-gray-500">Đang tải dữ liệu...</p>
-              ) : dashboard.todayTasks.length === 0 ? (
-                <p className="px-4 py-5 text-sm text-gray-500">Hôm nay chưa có việc nào được giao.</p>
-              ) : (
-                <ul className="divide-y divide-gray-100">
-                  {dashboard.todayTasks.map((task) => (
-                    <li key={task.id} className="px-4 py-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-semibold text-gray-900">{task.title}</div>
-                          <div className="text-xs text-gray-600 mt-1">{task.description || 'Không có mô tả'}</div>
-                          <div className="text-[11px] text-gray-500 mt-2">Hạn: {formatDate(task.dueDate)} {task.dueTime ? `• ${task.dueTime}` : ''}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className={`text-xs font-semibold ${priorityClass(task.priority)}`}>{task.priorityLabel}</div>
-                          <div className="text-[11px] text-gray-500 mt-1">{task.statusLabel}</div>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
-
-          <section className="bg-white border border-gray-200 rounded-lg">
-            <div className="px-4 py-3 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-800">Công Văn • Nghị Quyết • Tin Tức Cán Bộ</h2>
-            </div>
-            <div className="max-h-[320px] overflow-auto">
-              {loading ? (
-                <p className="px-4 py-5 text-sm text-gray-500">Đang tải dữ liệu...</p>
-              ) : dashboard.documents.length === 0 ? (
-                <p className="px-4 py-5 text-sm text-gray-500">Chưa có bản tin/công văn nào.</p>
-              ) : (
-                <ul className="divide-y divide-gray-100">
-                  {dashboard.documents.map((doc) => (
-                    <li key={doc.id} className="px-4 py-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[11px] px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200">{doc.categoryLabel}</span>
-                            {doc.isPinned && (
-                              <span className="text-[11px] px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">Ưu tiên</span>
-                            )}
+                    return (
+                      <li key={item.id} className="rounded-md border border-gray-200 bg-white p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{toRequestCode(item.id)} • {item.requestType}</h3>
+                            <p className="text-sm text-gray-600 mt-1">{item.businessName}</p>
+                            <p className="text-xs text-gray-500 mt-1">{item.businessAddress}</p>
+                            <p className="text-xs text-gray-500 mt-1">Người nộp: {item.citizen.fullName} ({item.citizen.phone || 'Chưa có'})</p>
                           </div>
-                          <div className="font-semibold text-gray-900">{doc.title}</div>
-                          <div className="text-xs text-gray-600 mt-1">{doc.summary || 'Không có tóm tắt'}</div>
-                          <div className="text-[11px] text-gray-500 mt-2">
-                            {doc.documentNumber ? `${doc.documentNumber} • ` : ''}
-                            {doc.issuedBy || 'Đơn vị ban hành'} • {formatDate(doc.publishedAt)}
-                          </div>
+                          <span className={`inline-flex text-xs rounded border px-2 py-1 ${statusBadgeClass(item.status)}`}>
+                            {item.statusLabel}
+                          </span>
                         </div>
-                        {doc.externalUrl && (
-                          <a
-                            href={doc.externalUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs px-3 py-1.5 rounded border border-[#8B2500] text-[#8B2500] hover:bg-[#8B2500] hover:text-white transition-colors whitespace-nowrap"
+
+                        <div className="grid grid-cols-1 md:grid-cols-[170px_1fr_auto] gap-2 mt-3">
+                          <select
+                            value={draftStatus}
+                            onChange={(e) => setRequestStatusDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                            className="h-9 border border-gray-300 px-3 text-sm"
                           >
-                            Mở link
-                          </a>
-                        )}
+                            <option value="pending">Chờ xử lý</option>
+                            <option value="approved">Đã phê duyệt</option>
+                            <option value="additional_info_required">Yêu cầu bổ sung</option>
+                            <option value="rejected">Bị từ chối</option>
+                          </select>
+
+                          <input
+                            type="text"
+                            value={draftNote}
+                            onChange={(e) => setRequestNoteDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                            className="h-9 border border-gray-300 px-3 text-sm"
+                            placeholder="Ghi chú xử lý..."
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateRequestStatus(item.id)}
+                            disabled={updatingRequestId === item.id || isUnchanged}
+                            className="h-9 px-4 rounded bg-[#8B2500] text-white text-sm hover:bg-[#6B1A00] disabled:opacity-60"
+                          >
+                            {updatingRequestId === item.id ? 'Đang lưu...' : 'Lưu trạng thái'}
+                          </button>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                          <span>Nộp: {formatDateTime(item.submittedAt)} • Cập nhật: {formatDateTime(item.updatedAt)}</span>
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/can-bo/ho-so/${item.id}`)}
+                            className="px-3 py-1.5 rounded border border-[#8B2500] text-[#8B2500] hover:bg-[#8B2500] hover:text-white transition-colors"
+                          >
+                            Xem chi tiết nội dung hồ sơ
+                          </button>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+        </section>
+      </main>
+
+      {reviewModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/45"
+            aria-label="Đóng popup review"
+            onClick={() => setReviewModal((prev) => ({ ...prev, open: false }))}
+          />
+
+          <section className="relative z-10 w-full max-w-4xl rounded-lg border border-[#e3d8d1] bg-white shadow-2xl max-h-[85vh] overflow-hidden">
+            <div className="bg-gradient-to-r from-[#8B2500] via-[#a53a13] to-[#b9522a] text-white px-5 py-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg md:text-xl font-bold">Danh sách review chi tiết</h2>
+                <p className="text-sm text-[#fcebdc] mt-1">Cơ sở: {reviewModal.businessName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReviewModal((prev) => ({ ...prev, open: false }))}
+                className="h-8 w-8 rounded border border-white/60 hover:bg-white/15"
+                aria-label="Đóng"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4 overflow-auto max-h-[calc(85vh-80px)]">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="text-gray-600">Tổng lượt review</div>
+                  <div className="font-semibold text-gray-900">{reviewModal.thongKeReview?.tongLuotReview ?? 0}</div>
+                </div>
+                <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="text-gray-600">Điểm trung bình</div>
+                  <div className="font-semibold text-gray-900">{formatAverageRating(reviewModal.thongKeReview?.diemTrungBinh)}</div>
+                </div>
+                <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="text-gray-600">Bộ lọc ngày</div>
+                  <div className="font-semibold text-gray-900">
+                    {reviewModal.boLoc?.tuNgay || 'Không giới hạn'} → {reviewModal.boLoc?.denNgay || 'Không giới hạn'}
+                  </div>
+                </div>
+              </div>
+
+              {reviewModal.danhSachReview.length === 0 ? (
+                <p className="text-sm text-gray-500">Không có review trong khoảng thời gian đã chọn.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {reviewModal.danhSachReview.map((review) => (
+                    <li key={review.id} className="rounded border border-gray-200 bg-white p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold text-gray-900">{review.tenNguoiReview || 'Ẩn danh'}</p>
+                        <span className="text-amber-600 font-medium" title={`${review.soSao}/5`}>{formatRatingStars(review.soSao)}</span>
                       </div>
+                      <p className="text-xs text-gray-500 mt-1">Thời gian: {formatDateTime(review.thoiDiemReview)}</p>
+                      <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap break-words">
+                        {review.noiDung?.trim() ? review.noiDung : 'Không có nội dung review.'}
+                      </p>
                     </li>
                   ))}
                 </ul>
@@ -323,7 +670,7 @@ export default function OfficialDashboardPage() {
             </div>
           </section>
         </div>
-      </main>
+      )}
     </div>
   )
 }

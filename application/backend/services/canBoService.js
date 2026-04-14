@@ -42,6 +42,38 @@ const DOCUMENT_CATEGORY_MAP = {
 const mapStatusLabel = (status) => STATUS_MAP[status] || status
 const normalizeStatus = (status) => STATUS_ALIASES[status] || status
 
+const normalizeDateInput = (value) => {
+  if (!value) return null
+  const raw = String(value).trim()
+  if (!raw) return null
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const err = new Error('Định dạng ngày không hợp lệ. Sử dụng YYYY-MM-DD')
+    err.statusCode = 400
+    throw err
+  }
+
+  return raw
+}
+
+const mapRequestRow = (row) => ({
+  id: row.id,
+  maSo: `HS-${String(row.id).padStart(6, '0')}`,
+  tenThuTuc: row.request_type_name,
+  tenCoSo: row.business_name || 'Chưa cập nhật',
+  diaChi: row.business_address || 'Chưa cập nhật',
+  congDan: {
+    hoTen: row.citizen_name,
+    sdt: row.citizen_phone
+  },
+  trangThai: row.status,
+  trangThaiHienThi: mapStatusLabel(row.status),
+  ghiChu: row.official_note,
+  ngayNop: row.created_at,
+  ngayCapNhat: row.updated_at,
+  duLieuKhaiBao: row.data || null
+})
+
 export const CanBoService = {
   // Đăng nhập cán bộ
   dangNhap: async (taiKhoan, matKhau) => {
@@ -72,22 +104,90 @@ export const CanBoService = {
     const normalizedStatus = trangThai ? normalizeStatus(trangThai) : null
     const rows = await CanBoDbModel.findRegistrationRequests({ status: normalizedStatus, limit: 200 })
 
-    return rows.map((row) => ({
-      id: row.id,
-      maSo: `HS-${String(row.id).padStart(6, '0')}`,
-      tenThuTuc: row.request_type_name,
-      tenCoSo: row.business_name || 'Chưa cập nhật',
-      diaChi: row.business_address || 'Chưa cập nhật',
-      congDan: {
-        hoTen: row.citizen_name,
-        sdt: row.citizen_phone
+    return rows.map(mapRequestRow)
+  },
+
+  getHoSoChiTiet: async (id) => {
+    const requestId = Number(id)
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      const err = new Error('ID hồ sơ không hợp lệ')
+      err.statusCode = 400
+      throw err
+    }
+
+    const row = await CanBoDbModel.findRegistrationRequestById(requestId)
+    if (!row) {
+      const err = new Error('Không tìm thấy hồ sơ')
+      err.statusCode = 404
+      throw err
+    }
+
+    return mapRequestRow(row)
+  },
+
+  getThongKeReviewTheoCoSo: async ({ businessId, fromDate, toDate }) => {
+    const normalizedBusinessId = Number(businessId)
+    if (!Number.isInteger(normalizedBusinessId) || normalizedBusinessId <= 0) {
+      const err = new Error('ID cơ sở không hợp lệ')
+      err.statusCode = 400
+      throw err
+    }
+
+    const normalizedFromDate = normalizeDateInput(fromDate)
+    const normalizedToDate = normalizeDateInput(toDate)
+
+    if (normalizedFromDate && normalizedToDate && normalizedFromDate > normalizedToDate) {
+      const err = new Error('Khoảng ngày không hợp lệ: Từ ngày phải nhỏ hơn hoặc bằng Đến ngày')
+      err.statusCode = 400
+      throw err
+    }
+
+    const business = await CanBoDbModel.findBusinessById(normalizedBusinessId)
+    if (!business) {
+      const err = new Error('Không tìm thấy cơ sở kinh doanh')
+      err.statusCode = 404
+      throw err
+    }
+
+    const stats = await CanBoDbModel.getBusinessReviewStats({
+      businessId: normalizedBusinessId,
+      fromDate: normalizedFromDate,
+      toDate: normalizedToDate
+    })
+
+    const reviews = await CanBoDbModel.findBusinessReviews({
+      businessId: normalizedBusinessId,
+      fromDate: normalizedFromDate,
+      toDate: normalizedToDate,
+      limit: 300
+    })
+
+    return {
+      coSo: {
+        id: business.id,
+        tenCoSo: business.name,
+        diaChi: business.address,
+        loaiHinh: business.business_type,
+        trangThai: business.status
       },
-      trangThai: row.status,
-      trangThaiHienThi: mapStatusLabel(row.status),
-      ghiChu: row.official_note,
-      ngayNop: row.created_at,
-      ngayCapNhat: row.updated_at
-    }))
+      boLoc: {
+        tuNgay: normalizedFromDate,
+        denNgay: normalizedToDate
+      },
+      thongKeReview: {
+        tongLuotReview: Number(stats.total_reviews || 0),
+        diemTrungBinh: stats.average_rating,
+        reviewDauTien: stats.first_review_at,
+        reviewGanNhat: stats.last_review_at
+      },
+      danhSachReview: reviews.map((review) => ({
+        id: review.id,
+        tenNguoiReview: review.customer_name || 'Ẩn danh',
+        soSao: Number(review.rating_star || 0),
+        noiDung: review.comment || '',
+        thoiDiemReview: review.reviewed_at
+      }))
+    }
   },
 
   // Cập nhật trạng thái hồ sơ
@@ -99,17 +199,25 @@ export const CanBoService = {
       const err = new Error(`Trạng thái không hợp lệ. Chấp nhận: ${validStatuses.join(', ')}`); err.statusCode = 400; throw err
     }
 
-    const hoSo = await CanBoDbModel.updateRegistrationRequestStatus({
+    const updated = await CanBoDbModel.updateRegistrationRequestStatus({
       id: Number(id),
       status: normalizedStatus,
       officialNote: ghiChu || `Được xử lý bởi cán bộ #${canBoId}`
     })
 
+    if (!updated) {
+      const err = new Error('Không tìm thấy hồ sơ'); err.statusCode = 404; throw err
+    }
+
+    const hoSo = await CanBoDbModel.findRegistrationRequestById(Number(id))
     if (!hoSo) {
       const err = new Error('Không tìm thấy hồ sơ'); err.statusCode = 404; throw err
     }
 
-    return hoSo
+    return {
+      message: 'Cập nhật trạng thái hồ sơ thành công',
+      hoSo: mapRequestRow(hoSo)
+    }
   },
 
   // Thống kê theo tháng
@@ -157,7 +265,7 @@ export const CanBoService = {
       documentRows
     ] = await Promise.all([
       CanBoDbModel.countBusinesses(),
-      CanBoDbModel.findBusinesses(12),
+      CanBoDbModel.findBusinesses(5000),
       CanBoDbModel.findRegistrationRequests({ limit: 30 }),
       CanBoDbModel.countRequestsByStatus(),
       CanBoDbModel.findTodayTasks(Number(officialUserId), 20),

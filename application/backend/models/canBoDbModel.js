@@ -59,6 +59,31 @@ export const CanBoDbModel = {
     return result.rows
   },
 
+  findBusinessById: async (businessId) => {
+    const result = await query(
+      `SELECT
+         b.id,
+         b.name,
+         b.address,
+         b.district,
+         b.province_city,
+         b.status,
+         b.license_number,
+         b.created_at,
+         bt.name AS business_type,
+         u.full_name AS owner_name,
+         u.phone AS owner_phone
+       FROM businesses b
+       INNER JOIN business_types bt ON bt.id = b.type_id
+       LEFT JOIN users u ON u.id = b.owner_id
+       WHERE b.id = $1
+       LIMIT 1`,
+      [Number(businessId)]
+    )
+
+    return result.rows[0] || null
+  },
+
   countBusinesses: async () => {
     const result = await query('SELECT COUNT(*)::INTEGER AS count FROM businesses')
     return Number(result.rows[0]?.count || 0)
@@ -73,11 +98,12 @@ export const CanBoDbModel = {
       rr.official_note,
       rr.created_at,
       rr.updated_at,
+      rr.data,
       u.full_name AS citizen_name,
       u.phone AS citizen_phone,
       bt.name AS request_type_name,
-      COALESCE(rr.data->>'name', rr.data->>'business_name', rr.data->>'tenCoSo') AS business_name,
-      COALESCE(rr.data->>'address', rr.data->>'diaChi') AS business_address
+      COALESCE(rr.data->>'name', rr.data->>'business_name', rr.data->>'tenCoSo', rr.data->>'tenCoSoKinhDoanh') AS business_name,
+      COALESCE(rr.data->>'address', rr.data->>'diaChi', rr.data->>'diaChiDangKy') AS business_address
     FROM registration_requests rr
     INNER JOIN users u ON u.id = rr.citizen_id
     INNER JOIN business_types bt ON bt.id = rr.request_type`
@@ -92,6 +118,31 @@ export const CanBoDbModel = {
 
     const result = await query(sql, params)
     return result.rows
+  },
+
+  findRegistrationRequestById: async (id) => {
+    const result = await query(
+      `SELECT
+         rr.id,
+         rr.status,
+         rr.official_note,
+         rr.created_at,
+         rr.updated_at,
+         rr.data,
+         u.full_name AS citizen_name,
+         u.phone AS citizen_phone,
+         bt.name AS request_type_name,
+         COALESCE(rr.data->>'name', rr.data->>'business_name', rr.data->>'tenCoSo', rr.data->>'tenCoSoKinhDoanh') AS business_name,
+         COALESCE(rr.data->>'address', rr.data->>'diaChi', rr.data->>'diaChiDangKy') AS business_address
+       FROM registration_requests rr
+       INNER JOIN users u ON u.id = rr.citizen_id
+       INNER JOIN business_types bt ON bt.id = rr.request_type
+       WHERE rr.id = $1
+       LIMIT 1`,
+      [Number(id)]
+    )
+
+    return result.rows[0] || null
   },
 
   countRequestsByStatus: async () => {
@@ -187,6 +238,72 @@ export const CanBoDbModel = {
        GROUP BY month
        ORDER BY month`,
       [year]
+    )
+
+    return result.rows
+  },
+
+  getBusinessReviewStats: async ({ businessId, fromDate = null, toDate = null }) => {
+    const params = [Number(businessId)]
+    const whereClauses = ['business_id = $1']
+
+    if (fromDate) {
+      params.push(fromDate)
+      whereClauses.push(`reviewed_at >= $${params.length}::date`)
+    }
+
+    if (toDate) {
+      params.push(toDate)
+      whereClauses.push(`reviewed_at < ($${params.length}::date + INTERVAL '1 day')`)
+    }
+
+    const result = await query(
+      `SELECT
+         COUNT(*)::INTEGER AS total_reviews,
+         ROUND(AVG(rating_star)::numeric, 2)::FLOAT AS average_rating,
+         MIN(reviewed_at) AS first_review_at,
+         MAX(reviewed_at) AS last_review_at
+       FROM customer_reviews
+       WHERE ${whereClauses.join(' AND ')}`,
+      params
+    )
+
+    return result.rows[0] || {
+      total_reviews: 0,
+      average_rating: null,
+      first_review_at: null,
+      last_review_at: null
+    }
+  },
+
+  findBusinessReviews: async ({ businessId, fromDate = null, toDate = null, limit = 200 }) => {
+    const params = [Number(businessId)]
+    const whereClauses = ['business_id = $1']
+
+    if (fromDate) {
+      params.push(fromDate)
+      whereClauses.push(`reviewed_at >= $${params.length}::date`)
+    }
+
+    if (toDate) {
+      params.push(toDate)
+      whereClauses.push(`reviewed_at < ($${params.length}::date + INTERVAL '1 day')`)
+    }
+
+    params.push(Math.min(Math.max(Number(limit) || 200, 1), 500))
+
+    const result = await query(
+      `SELECT
+         id,
+         customer_name,
+         rating_star::INTEGER AS rating_star,
+         comment,
+         reviewed_at
+       FROM customer_reviews
+       WHERE ${whereClauses.join(' AND ')}
+       ORDER BY reviewed_at DESC NULLS LAST, id DESC
+       LIMIT $${params.length}`,
+      params
     )
 
     return result.rows

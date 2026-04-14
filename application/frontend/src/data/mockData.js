@@ -40,13 +40,33 @@ export const categories = [
 ]
 
 export const navLinks = [
-  { label: 'GIỚI THIỆU', href: '#' },
-  { label: 'THÔNG TIN VÀ DỊCH VỤ', href: '#' },
-  { label: 'TIỆN ÍCH', href: '#' },
-  { label: 'PHẢN ÁNH KIẾN NGHỊ', href: '#' },
-  { label: 'THỐNG KÊ', href: '#' },
-  { label: 'ĐÁNH GIÁ TRỰC TUYẾN', href: '#' },
-  { label: 'HỖ TRỢ', href: '#' },
+  { label: 'GIỚI THIỆU', href: '/gioi-thieu' },
+  {
+    label: 'THÔNG TIN VÀ DỊCH VỤ',
+    href: '/dich-vu-cong-truc-tuyen',
+    children: [
+      { label: 'Dịch vụ công trực tuyến', href: '/dich-vu-cong-truc-tuyen' },
+      { label: 'Tra cứu tình trạng hồ sơ', href: '/tra-cuu-tinh-trang-ho-so' }
+    ]
+  },
+  {
+    label: 'PHẢN ÁNH KIẾN NGHỊ',
+    href: '/phan-anh-kien-nghi/gui',
+    children: [
+      { label: 'Gửi phản ánh kiến nghị', href: '/phan-anh-kien-nghi/gui' },
+      { label: 'Tra cứu phản ánh kiến nghị', href: '/phan-anh-kien-nghi/tra-cuu' }
+    ]
+  },
+  { label: 'THỐNG KÊ', href: '/thong-ke' },
+  {
+    label: 'ĐÁNH GIÁ TRỰC TUYẾN',
+    href: '/danh-gia',
+    children: [
+      { label: 'Tổng hợp đánh giá', href: '/danh-gia/tong-hop' },
+      { label: 'Đánh giá', href: '/danh-gia' }
+    ]
+  },
+  { label: 'HỖ TRỢ', href: 'https://dichvucong.bvhttdl.gov.vn/congdan/Default.aspx?tabid=252' },
 ]
 
 export const statsData = {
