@@ -1,0 +1,16 @@
+# PhoBERT local
+Model_2/phobert_local/
+
+# model weights
+*.pth
+*.pt
+*.bin
+*.safetensors
+
+# python
+__pycache__/
+*.pyc
+
+# env
+venv/
+.env

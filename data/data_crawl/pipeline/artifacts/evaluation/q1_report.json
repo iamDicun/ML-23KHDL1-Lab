@@ -1,0 +1,7 @@
+{
+  "input_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\step4\\human_label_v1.csv",
+  "reference_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\step4\\relabel_pool_3k_eval_reference.csv",
+  "labeled_rows_used": 3000,
+  "group_error_summary_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\evaluation\\q1_group_error_summary.csv",
+  "pairwise_test_file": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\evaluation\\q1_pairwise_group_tests.csv"
+}

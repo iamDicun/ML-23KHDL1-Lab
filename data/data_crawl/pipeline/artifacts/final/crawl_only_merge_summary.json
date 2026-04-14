@@ -1,0 +1,40 @@
+{
+  "input_pseudo": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\step3\\output_results_filtered_step3.csv",
+  "input_human": "C:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\step4\\human_label_v1.csv",
+  "output_full": "c:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\final\\crawl_only_merged_full.csv",
+  "output_train": "c:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\final\\crawl_only_train.csv",
+  "output_val": "c:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\final\\crawl_only_val.csv",
+  "output_test": "c:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\final\\crawl_only_test.csv",
+  "rows_full": 18891,
+  "rows_train": 13224,
+  "rows_val": 3778,
+  "rows_test": 1889,
+  "ratios": {
+    "train": 0.7,
+    "val": 0.2,
+    "test": 0.1
+  },
+  "final_columns": [
+    "review_id",
+    "Review",
+    "rating",
+    "vệ sinh_label",
+    "đồ ăn thức uống_label",
+    "khách sạn_label",
+    "vị trí_label",
+    "phòng ốc_label",
+    "dịch vụ_label"
+  ],
+  "dedup": {
+    "timestamp": "20260410_161353",
+    "method": "drop duplicated normalized Review (strip+lower+collapse whitespace), keep first",
+    "rows_before": 19120,
+    "duplicate_rows_removed": 229,
+    "rows_after": 18891,
+    "overlap_train_val": 0,
+    "overlap_train_test": 0,
+    "overlap_val_test": 0,
+    "backup_dir": "c:\\Users\\ADMIN\\Documents\\GitHub\\ML-23KHDL1-Lab\\data\\data_crawl\\pipeline\\artifacts\\final\\backup_before_dedup_20260410_161353",
+    "random_seed": 42
+  }
+}
