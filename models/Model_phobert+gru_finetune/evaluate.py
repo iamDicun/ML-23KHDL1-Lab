@@ -225,9 +225,11 @@ def main():
     exact_match = float(np.all(y_true == y_pred, axis=1).mean())
     print(f"Overall accuracy: {flat_acc:.4f}")
     print(f"Exact-match ratio: {exact_match:.4f}")
-    print("\nPer-aspect macro-F1:")
+    print("\nPer-aspect accuracy and macro-F1:")
     f1_scores = []
+    acc_scores = []
     for idx, label_name in enumerate(LABEL_COLS):
+        acc = accuracy_score(y_true[:, idx], y_pred[:, idx])
         f1 = f1_score(
             y_true[:, idx],
             y_pred[:, idx],
@@ -235,8 +237,9 @@ def main():
             labels=CLASS_VALUES,
             zero_division=0,
         )
+        acc_scores.append(acc)
         f1_scores.append(f1)
-        print(f"- {label_name}: {f1:.4f}")
+        print(f"- {label_name}: acc={acc:.4f} macro-F1={f1:.4f}")
 
         if args.verbose:
             print(
@@ -248,7 +251,9 @@ def main():
                 )
             )
 
+    mean_acc = float(np.mean(acc_scores))
     mean_f1 = float(np.mean(f1_scores))
+    print(f"\nMean accuracy across 6 aspects: {mean_acc:.4f}")
     print(f"\nMean macro-F1 across 6 aspects: {mean_f1:.4f}")
 
 
