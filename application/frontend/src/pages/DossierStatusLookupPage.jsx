@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import { apiClient } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Tất cả trạng thái' },
@@ -26,6 +27,7 @@ const formatDateTime = (value) => {
 }
 
 export default function DossierStatusLookupPage() {
+  const { user, isAuthenticated } = useAuth()
   const [searchParams] = useSearchParams()
   const [q, setQ] = useState('')
   const [trangThai, setTrangThai] = useState('')
@@ -40,7 +42,27 @@ export default function DossierStatusLookupPage() {
     yeuCauBoSung: 0
   })
 
+  const canLookup = isAuthenticated && user?.role === 'citizen'
+
+  const resetLookupData = () => {
+    setItems([])
+    setTongHop({
+      tongHoSo: 0,
+      choXuLy: 0,
+      daPheDuyet: 0,
+      biTuChoi: 0,
+      yeuCauBoSung: 0
+    })
+  }
+
   const fetchData = async ({ keyword = q, status = trangThai } = {}) => {
+    if (!canLookup) {
+      resetLookupData()
+      setLoading(false)
+      setMessage('Vui lòng đăng nhập tài khoản công dân để chỉ xem hồ sơ của chính bạn.')
+      return
+    }
+
     setLoading(true)
     setMessage('')
 
@@ -66,15 +88,12 @@ export default function DossierStatusLookupPage() {
         setMessage('Không tìm thấy hồ sơ phù hợp.')
       }
     } catch (error) {
-      setItems([])
-      setTongHop({
-        tongHoSo: 0,
-        choXuLy: 0,
-        daPheDuyet: 0,
-        biTuChoi: 0,
-        yeuCauBoSung: 0
-      })
-      setMessage(error.message || 'Không thể tải dữ liệu tra cứu hồ sơ.')
+      resetLookupData()
+      if (error.status === 401 || error.status === 403) {
+        setMessage('Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.')
+      } else {
+        setMessage(error.message || 'Không thể tải dữ liệu tra cứu hồ sơ.')
+      }
     } finally {
       setLoading(false)
     }
@@ -89,9 +108,14 @@ export default function DossierStatusLookupPage() {
 
     setQ(keywordFromUrl)
     setTrangThai(statusFromUrl)
-    fetchData({ keyword: keywordFromUrl, status: statusFromUrl })
+    if (canLookup) {
+      fetchData({ keyword: keywordFromUrl, status: statusFromUrl })
+    } else {
+      resetLookupData()
+      setMessage('Vui lòng đăng nhập tài khoản công dân để chỉ xem hồ sơ của chính bạn.')
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams])
+  }, [searchParams, canLookup])
 
   const handleSearch = async () => {
     await fetchData()
@@ -112,18 +136,26 @@ export default function DossierStatusLookupPage() {
         <div className="h-[1.5px] bg-[#d88f70] mt-2 mb-5" />
 
         <section className="bg-white border border-gray-200 rounded px-4 py-4">
+          {!canLookup && (
+            <div className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Bạn cần đăng nhập tài khoản công dân để tra cứu hồ sơ của chính mình.
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-[1fr_240px_130px_120px] gap-2 items-center">
             <input
               type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              disabled={!canLookup}
               className="h-10 border border-gray-300 px-3"
-              placeholder="Nhập mã hồ sơ / tên thủ tục / cơ sở / người nộp / số điện thoại"
+              placeholder="Nhập mã hồ sơ / tên thủ tục trong phạm vi hồ sơ của bạn"
             />
 
             <select
               value={trangThai}
               onChange={(e) => setTrangThai(e.target.value)}
+              disabled={!canLookup}
               className="h-10 border border-gray-300 px-3"
             >
               {STATUS_OPTIONS.map((option) => (
@@ -134,6 +166,7 @@ export default function DossierStatusLookupPage() {
             <button
               type="button"
               onClick={handleSearch}
+              disabled={!canLookup || loading}
               className="h-10 bg-[#cd7f57] text-white text-sm font-semibold rounded-sm hover:bg-[#bc6f49]"
             >
               Tìm kiếm
@@ -142,6 +175,7 @@ export default function DossierStatusLookupPage() {
             <button
               type="button"
               onClick={handleReset}
+              disabled={!canLookup || loading}
               className="h-10 border border-gray-300 text-sm font-semibold text-gray-700 rounded-sm hover:bg-gray-50"
             >
               Làm mới

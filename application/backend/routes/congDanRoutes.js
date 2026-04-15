@@ -10,8 +10,8 @@ router.post('/dang-nhap', CongDanController.dangNhap)
 router.post('/dang-nhap/vneid', CongDanController.dangNhapVneId)
 
 // Hồ sơ
-router.get('/tra-cuu', CongDanController.getDanhSachTraCuuHoSo)
-router.get('/tra-cuu/:maSo', CongDanController.traCuuHoSo)
+router.get('/tra-cuu', jwtAuth, requireRole('citizen'), CongDanController.getDanhSachTraCuuHoSo)
+router.get('/tra-cuu/:maSo', jwtAuth, requireRole('citizen'), CongDanController.traCuuHoSo)
 router.get('/thong-ke-thu-ly', CongDanController.getThongKeThuLy)
 router.get('/:id/ho-so', jwtAuth, requireRole('citizen'), CongDanController.getDanhSachHoSo)
 router.post('/:id/ho-so', jwtAuth, requireRole('citizen'), CongDanController.nopHoSo)

@@ -86,6 +86,31 @@ const getRegistrationRequestById = async (requestId) => {
   return result.rows[0] || null
 }
 
+const getRegistrationRequestByIdAndCitizenId = async (requestId, citizenId) => {
+  const result = await query(
+    `SELECT
+       rr.id,
+       rr.status,
+       rr.official_note,
+       rr.created_at,
+       rr.updated_at,
+       rr.data,
+       bt.name AS request_type_name,
+       u.full_name AS citizen_name,
+       u.phone AS citizen_phone,
+       COALESCE(rr.data->>'name', rr.data->>'business_name', rr.data->>'tenCoSo', rr.data->>'tenCoSoKinhDoanh') AS business_name,
+       COALESCE(rr.data->>'address', rr.data->>'diaChi', rr.data->>'diaChiDangKy') AS business_address
+     FROM registration_requests rr
+     LEFT JOIN users u ON u.id = rr.citizen_id
+     INNER JOIN business_types bt ON bt.id = rr.request_type
+     WHERE rr.id = $1 AND rr.citizen_id = $2
+     LIMIT 1`,
+    [requestId, citizenId]
+  )
+
+  return result.rows[0] || null
+}
+
 const ensureOnlineServiceRequestTypeId = async () => {
   const result = await query(
     `INSERT INTO business_types(name, description)
@@ -234,7 +259,14 @@ export const CongDanService = {
   },
 
   // Tra cứu tình trạng hồ sơ công khai từ DB
-  getDanhSachTraCuuHoSo: async ({ q, trangThai, limit } = {}) => {
+  getDanhSachTraCuuHoSo: async ({ citizenId, q, trangThai, limit } = {}) => {
+    const normalizedCitizenId = Number(citizenId)
+    if (!Number.isInteger(normalizedCitizenId) || normalizedCitizenId <= 0) {
+      const err = new Error('ID công dân không hợp lệ')
+      err.statusCode = 400
+      throw err
+    }
+
     const normalizedStatus = normalizeHoSoStatus(trangThai)
     if (trangThai && !normalizedStatus) {
       const err = new Error('Trạng thái tra cứu không hợp lệ')
@@ -264,6 +296,9 @@ export const CongDanService = {
     FROM registration_requests rr
     LEFT JOIN users u ON u.id = rr.citizen_id
     INNER JOIN business_types bt ON bt.id = rr.request_type`
+
+    params.push(normalizedCitizenId)
+    whereClauses.push(`rr.citizen_id = $${params.length}`)
 
     if (normalizedStatus) {
       params.push(normalizedStatus)
@@ -357,7 +392,14 @@ export const CongDanService = {
   },
 
   // Tra cứu hồ sơ theo mã số
-  traCuuHoSo: async (maSo) => {
+  traCuuHoSo: async ({ citizenId, maSo }) => {
+    const normalizedCitizenId = Number(citizenId)
+    if (!Number.isInteger(normalizedCitizenId) || normalizedCitizenId <= 0) {
+      const err = new Error('ID công dân không hợp lệ')
+      err.statusCode = 400
+      throw err
+    }
+
     const requestId = parseRequestIdFromLookup(maSo)
     if (!requestId) {
       const err = new Error('Mã số hồ sơ không hợp lệ. Ví dụ: HS-000001')
@@ -365,9 +407,9 @@ export const CongDanService = {
       throw err
     }
 
-    const hoSo = await getRegistrationRequestById(requestId)
+    const hoSo = await getRegistrationRequestByIdAndCitizenId(requestId, normalizedCitizenId)
     if (!hoSo) {
-      const err = new Error('Không tìm thấy hồ sơ'); err.statusCode = 404; throw err
+      const err = new Error('Không tìm thấy hồ sơ thuộc tài khoản của bạn'); err.statusCode = 404; throw err
     }
 
     return mapHoSoRow(hoSo)

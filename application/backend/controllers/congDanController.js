@@ -61,8 +61,13 @@ export const CongDanController = {
   // GET /cong-dan/tra-cuu?q=...&trangThai=...
   getDanhSachTraCuuHoSo: async (req, res, next) => {
     try {
+      const citizenId = Number(req.user?.userId)
+      if (!Number.isInteger(citizenId) || citizenId <= 0) {
+        const err = new Error('Không xác định được tài khoản công dân'); err.statusCode = 401; throw err
+      }
+
       const { q, trangThai, limit } = req.query
-      const result = await CongDanService.getDanhSachTraCuuHoSo({ q, trangThai, limit })
+      const result = await CongDanService.getDanhSachTraCuuHoSo({ citizenId, q, trangThai, limit })
       res.json(result)
     } catch (err) { next(err) }
   },
@@ -82,8 +87,13 @@ export const CongDanController = {
   // GET /cong-dan/tra-cuu/:maSo
   traCuuHoSo: async (req, res, next) => {
     try {
+      const citizenId = Number(req.user?.userId)
+      if (!Number.isInteger(citizenId) || citizenId <= 0) {
+        const err = new Error('Không xác định được tài khoản công dân'); err.statusCode = 401; throw err
+      }
+
       const { maSo } = req.params
-      const result = await CongDanService.traCuuHoSo(maSo)
+      const result = await CongDanService.traCuuHoSo({ citizenId, maSo })
       res.json(result)
     } catch (err) { next(err) }
   },
