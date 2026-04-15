@@ -21,6 +21,7 @@ router.get('/dashboard', CanBoController.getDashboard)
 router.get('/thong-ke', CanBoController.getThongKe)
 router.get('/co-so/:coSoId/review-thong-ke', CanBoController.getThongKeReviewTheoCoSo)
 router.get('/co-so/:coSoId/thong-ke-ai', CanBoController.getThongKeAiTheoCoSo)
+router.get('/thong-ke-ai/tong-hop', CanBoController.getTongHopThongKeAi)
 router.post('/ai-test', CanBoController.testAiModel)
 
 // Danh sách cán bộ

@@ -15,6 +15,10 @@ const officialNavLinks = [
       {
         label: 'Thống kê tình hình hoạt động của cơ sở',
         href: '/can-bo/quan-ly?section=can-bo-thong-ke-co-so'
+      },
+      {
+        label: 'Thống kê AI theo khu vực',
+        href: '/can-bo/thong-ke-ai'
       }
     ]
   },

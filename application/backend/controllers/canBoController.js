@@ -70,6 +70,17 @@ export const CanBoController = {
     } catch (err) { next(err) }
   },
 
+  // GET /can-bo/thong-ke-ai/tong-hop?chiCanhBao=true
+  getTongHopThongKeAi: async (req, res, next) => {
+    try {
+      const { chiCanhBao } = req.query
+      const result = await CanBoService.getTongHopThongKeAi({
+        chiCanhBao: String(chiCanhBao || '').toLowerCase() === 'true'
+      })
+      res.json(result)
+    } catch (err) { next(err) }
+  },
+
   // POST /can-bo/ai-test
   testAiModel: async (req, res, next) => {
     try {

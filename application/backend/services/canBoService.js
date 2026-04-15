@@ -51,6 +51,11 @@ const ATTRIBUTE_LABELS = {
   service: 'Dịch vụ'
 }
 
+const HIGH_RISK_SCORE_THRESHOLD = 0.45
+const WATCH_SCORE_THRESHOLD = 0.5
+const NOT_MENTIONED_SCORE = 0.5
+const UNKNOWN_AREA_LABEL = 'Chưa xác định'
+
 const DEPLOYED_ASPECT_ALIASES = {
   hygiene: ['hygiene', 'vệ sinh', 've sinh'],
   food: ['food', 'đồ ăn thức uống', 'do an thuc uong'],
@@ -62,9 +67,20 @@ const DEPLOYED_ASPECT_ALIASES = {
 
 const LABEL_TO_CLASS = {
   positive: 1,
+  pos: 1,
+  'tich cuc': 1,
   negative: 2,
+  neg: 2,
+  'tieu cuc': 2,
   none: 0,
-  neutral: 0
+  neutral: 0,
+  'not mentioned': 0,
+  notmentioned: 0,
+  'not mention': 0,
+  'khong de cap': 0,
+  'khong danh gia': 0,
+  'trung tinh': 0,
+  unknown: 0
 }
 
 const STOPWORDS_VI = new Set([
@@ -92,6 +108,15 @@ const normalizeScore = (value) => {
   return Math.max(0, Math.min(1, n))
 }
 
+const toFiniteNumber = (value) => {
+  if (value === null || value === undefined) return null
+  if (typeof value === 'string' && value.trim() === '') return null
+
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  return n
+}
+
 const average = (values = []) => {
   const filtered = values.filter((item) => Number.isFinite(item))
   if (!filtered.length) return 0
@@ -101,6 +126,18 @@ const average = (values = []) => {
 const round = (value, digits = 4) => {
   const factor = 10 ** digits
   return Math.round(Number(value) * factor) / factor
+}
+
+const roundOptional = (value, digits = 4) => {
+  const n = toFiniteNumber(value)
+  if (n === null) return null
+  return round(n, digits)
+}
+
+const isScoreEqual = (value, target, epsilon = 1e-6) => {
+  const n = toFiniteNumber(value)
+  if (n === null) return false
+  return Math.abs(n - target) <= epsilon
 }
 
 const normalizeModelInputText = (value) => String(value || '').trim().replace(/\s+/g, ' ')
@@ -166,7 +203,14 @@ const preprocessTextForModel = (rawText) => {
   return text
 }
 
-const normalizeAspectToken = (value) => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+const normalizeAspectToken = (value) => String(value || '')
+  .trim()
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9\s]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
 
 const coerceClassPrediction = (value) => {
   const numberValue = Number(value)
@@ -176,6 +220,65 @@ const coerceClassPrediction = (value) => {
   if (normalized in LABEL_TO_CLASS) return LABEL_TO_CLASS[normalized]
 
   return 0
+}
+
+const getDefinedValue = (values = []) => values.find((item) => {
+  if (item === undefined || item === null) return false
+  if (typeof item === 'string' && item.trim() === '') return false
+  return true
+})
+
+const extractPredictionValue = (rawValue) => {
+  if (Array.isArray(rawValue) && rawValue.length > 0) {
+    return extractPredictionValue(rawValue[0])
+  }
+
+  if (rawValue && typeof rawValue === 'object') {
+    const direct = getDefinedValue([
+      rawValue.prediction,
+      rawValue.class,
+      rawValue.label,
+      rawValue.sentiment,
+      rawValue.value
+    ])
+
+    if (direct !== undefined) {
+      if (direct && typeof direct === 'object') {
+        return extractPredictionValue(direct)
+      }
+      return direct
+    }
+  }
+
+  return rawValue
+}
+
+const extractConfidenceValue = (rawValue) => {
+  if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) return null
+
+  const direct = getDefinedValue([
+    rawValue.confidence,
+    rawValue.score,
+    rawValue.probability,
+    rawValue.prob,
+    rawValue.conf
+  ])
+
+  if (direct !== undefined) return direct
+
+  const nestedPrediction = rawValue.prediction
+  if (nestedPrediction && typeof nestedPrediction === 'object') {
+    const nested = getDefinedValue([
+      nestedPrediction.confidence,
+      nestedPrediction.score,
+      nestedPrediction.probability,
+      nestedPrediction.prob,
+      nestedPrediction.conf
+    ])
+    if (nested !== undefined) return nested
+  }
+
+  return null
 }
 
 const findAspectRawValue = (row, aliases = []) => {
@@ -198,20 +301,13 @@ const parseAspectPrediction = (rawValue) => {
     return { prediction: 0, confidence: 0 }
   }
 
-  if (typeof rawValue === 'object') {
-    const prediction = coerceClassPrediction(rawValue.prediction)
-    const confidence = Number.isFinite(Number(rawValue.confidence))
-      ? normalizeScore(Number(rawValue.confidence))
-      : 0
+  const prediction = coerceClassPrediction(extractPredictionValue(rawValue))
+  const confidenceRaw = extractConfidenceValue(rawValue)
+  const confidenceNumber = toFiniteNumber(confidenceRaw)
 
-    return { prediction, confidence }
-  }
-
-  const prediction = coerceClassPrediction(rawValue)
   return {
     prediction,
-    // Deployed HF response currently does not include confidence.
-    confidence: 0
+    confidence: confidenceNumber === null ? 0 : normalizeScore(confidenceNumber)
   }
 }
 
@@ -248,7 +344,7 @@ const resolveAiBaseUrl = (value) => {
 const classToScore = (predictedClass) => {
   if (predictedClass === 1) return 1
   if (predictedClass === 2) return 0
-  return 0.5
+  return NOT_MENTIONED_SCORE
 }
 
 const classToBucket = (predictedClass) => {
@@ -311,6 +407,232 @@ const normalizeDateInput = (value) => {
   }
 
   return raw
+}
+
+const normalizeOptionalScore = (value) => {
+  const n = toFiniteNumber(value)
+  if (n === null) return null
+  return Math.max(0, Math.min(1, n))
+}
+
+const normalizeSentimentValue = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'positive') return 'Positive'
+  if (normalized === 'negative') return 'Negative'
+  if (normalized === 'neutral') return 'Neutral'
+  return null
+}
+
+const sentimentToUiLabel = (value) => {
+  if (value === 'Positive') return 'Tích cực'
+  if (value === 'Negative') return 'Tiêu cực'
+  if (value === 'Neutral') return 'Trung tính'
+  return 'Chưa phân loại'
+}
+
+const isWardLikeSegment = (value) => {
+  const normalized = normalizeAspectToken(value).replace(/\./g, '').trim()
+  return normalized.startsWith('phuong ') || normalized.startsWith('xa ') || normalized.startsWith('thi tran ')
+}
+
+const resolveAreaFromAddress = (address) => {
+  const raw = String(address || '').trim()
+  if (!raw || normalizeAspectToken(raw) === normalizeAspectToken('Chưa cập nhật')) {
+    return {
+      district: UNKNOWN_AREA_LABEL,
+      city: UNKNOWN_AREA_LABEL
+    }
+  }
+
+  const parts = raw
+    .split(',')
+    .map((item) => item.trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+
+  if (parts.length === 0) {
+    return {
+      district: UNKNOWN_AREA_LABEL,
+      city: UNKNOWN_AREA_LABEL
+    }
+  }
+
+  const city = parts[parts.length - 1] || UNKNOWN_AREA_LABEL
+  let district = parts.length >= 2 ? parts[parts.length - 2] : UNKNOWN_AREA_LABEL
+
+  if (parts.length >= 3 && isWardLikeSegment(district)) {
+    district = parts[parts.length - 3]
+  }
+
+  return {
+    district: district || UNKNOWN_AREA_LABEL,
+    city
+  }
+}
+
+const parseTopNegativeKeywords = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  }
+
+  const raw = String(value || '').trim()
+  if (!raw) return []
+
+  if (raw.startsWith('{') && raw.endsWith('}')) {
+    return raw
+      .slice(1, -1)
+      .split(',')
+      .map((item) => item.trim().replace(/^"|"$/g, ''))
+      .filter(Boolean)
+  }
+
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+const summarizeRepresentativeReview = (value) => {
+  const lines = String(value || '')
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  if (!lines.length) return ''
+  return lines[0].replace(/^\(\d+\)\s*/, '').slice(0, 240)
+}
+
+const resolveRiskLevel = ({ hasAiData, overallScore, highRiskCount, warningCount }) => {
+  if (!hasAiData) {
+    return {
+      key: 'unrated',
+      label: 'Chưa phân tích'
+    }
+  }
+
+  if (highRiskCount >= 2 || (overallScore !== null && overallScore < HIGH_RISK_SCORE_THRESHOLD)) {
+    return {
+      key: 'high',
+      label: 'Nguy cơ cao'
+    }
+  }
+
+  if (warningCount > 0 || (overallScore !== null && overallScore < WATCH_SCORE_THRESHOLD)) {
+    return {
+      key: 'watch',
+      label: 'Cần theo dõi'
+    }
+  }
+
+  return {
+    key: 'stable',
+    label: 'Ổn định'
+  }
+}
+
+const buildAreaGroups = (items = [], areaField = 'district') => {
+  const areaMap = new Map()
+
+  for (const item of items) {
+    const areaName = areaField === 'city' ? item.khuVuc.tinhThanh : item.khuVuc.quanHuyen
+
+    if (!areaMap.has(areaName)) {
+      areaMap.set(areaName, {
+        khuVuc: areaName,
+        tongCoSo: 0,
+        coDuLieuAi: 0,
+        coSoCanhBao: 0,
+        tongDiem: 0,
+        tongDiemCount: 0,
+        byAspectWarning: new Map(),
+        zeroNegativeCount: 0,
+        zeroNotMentionedCount: 0,
+        byAspectZeroNegative: new Map(),
+        byAspectZeroNotMentioned: new Map()
+      })
+    }
+
+    const bucket = areaMap.get(areaName)
+    bucket.tongCoSo += 1
+
+    if (item.coDuLieuAi) {
+      bucket.coDuLieuAi += 1
+      if (Number.isFinite(item.diemTongQuan)) {
+        bucket.tongDiem += item.diemTongQuan
+        bucket.tongDiemCount += 1
+      }
+    }
+
+    if (item.canhBaoThuocTinh.length > 0) {
+      bucket.coSoCanhBao += 1
+    }
+
+    for (const alert of item.canhBaoThuocTinh) {
+      const current = bucket.byAspectWarning.get(alert.key) || {
+        key: alert.key,
+        label: alert.label,
+        count: 0
+      }
+      current.count += 1
+      bucket.byAspectWarning.set(alert.key, current)
+    }
+
+    for (const aspect of AI_ASPECTS) {
+      const aspectScore = item.diemThanhPhan?.[aspect]
+      const aspectLabel = ATTRIBUTE_LABELS[aspect] || aspect
+
+      if (isScoreEqual(aspectScore, 0)) {
+        bucket.zeroNegativeCount += 1
+        const current = bucket.byAspectZeroNegative.get(aspect) || {
+          key: aspect,
+          label: aspectLabel,
+          count: 0
+        }
+        current.count += 1
+        bucket.byAspectZeroNegative.set(aspect, current)
+        continue
+      }
+
+      if (isScoreEqual(aspectScore, NOT_MENTIONED_SCORE)) {
+        bucket.zeroNotMentionedCount += 1
+        const current = bucket.byAspectZeroNotMentioned.get(aspect) || {
+          key: aspect,
+          label: aspectLabel,
+          count: 0
+        }
+        current.count += 1
+        bucket.byAspectZeroNotMentioned.set(aspect, current)
+      }
+    }
+  }
+
+  return [...areaMap.values()]
+    .map((item) => ({
+      khuVuc: item.khuVuc,
+      tongCoSo: item.tongCoSo,
+      coDuLieuAi: item.coDuLieuAi,
+      coSoCanhBao: item.coSoCanhBao,
+      tiLeCanhBao: item.tongCoSo > 0 ? round((item.coSoCanhBao / item.tongCoSo) * 100, 2) : 0,
+      diemTongQuanTrungBinh: item.tongDiemCount > 0 ? round(item.tongDiem / item.tongDiemCount, 4) : null,
+      tongThuocTinh0TieuCuc: item.zeroNegativeCount,
+      tongThuocTinh0KhongDeCap: item.zeroNotMentionedCount,
+      thuocTinhCanhBaoNoiBat: [...item.byAspectWarning.values()]
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3),
+      thuocTinh0TieuCucNoiBat: [...item.byAspectZeroNegative.values()]
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3),
+      thuocTinh0KhongDeCapNoiBat: [...item.byAspectZeroNotMentioned.values()]
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3)
+    }))
+    .sort((a, b) => {
+      if (b.coSoCanhBao !== a.coSoCanhBao) return b.coSoCanhBao - a.coSoCanhBao
+      if (a.diemTongQuanTrungBinh === null) return 1
+      if (b.diemTongQuanTrungBinh === null) return -1
+      return a.diemTongQuanTrungBinh - b.diemTongQuanTrungBinh
+    })
 }
 
 const mapRequestRow = (row) => ({
@@ -606,8 +928,8 @@ export const CanBoService = {
     const aspectAverages = AI_ASPECTS.reduce((acc, aspect) => {
       const item = aspectStats[aspect]
       acc[aspect] = {
-        score: item.count > 0 ? normalizeScore(item.scoreSum / item.count) : 0,
-        confidence: item.count > 0 ? normalizeScore(item.confidenceSum / item.count) : 0,
+        score: item.count > 0 ? normalizeScore(item.scoreSum / item.count) : null,
+        confidence: item.count > 0 ? normalizeScore(item.confidenceSum / item.count) : null,
         positive: item.positive,
         negative: item.negative,
         none: item.none,
@@ -629,16 +951,38 @@ export const CanBoService = {
     const totalNegative = AI_ASPECTS.reduce((sum, aspect) => sum + aspectAverages[aspect].negative, 0)
     const sentimentLabel = deriveSentimentLabel({ totalPositive, totalNegative })
 
-    const scoreEntries = AI_ASPECTS.map((aspect) => ({
-      scoreType: aspect,
-      scoreValue: scores[aspect]
-    }))
+    const scoreEntries = AI_ASPECTS
+      .map((aspect) => ({
+        scoreType: aspect,
+        scoreValue: scores[aspect]
+      }))
+      .filter((item) => toFiniteNumber(item.scoreValue) !== null)
 
-    const [worstAttribute] = scoreEntries
+    const [worstAttributeByScore] = scoreEntries
       .slice()
       .sort((a, b) => a.scoreValue - b.scoreValue)
 
-    const focusAspects = [worstAttribute.scoreType]
+    const [worstAttributeByNegativeCount] = AI_ASPECTS
+      .map((aspect) => ({
+        scoreType: aspect,
+        negativeCount: aspectAverages[aspect].negative,
+        scoreValue: scores[aspect]
+      }))
+      .sort((a, b) => {
+        if (b.negativeCount !== a.negativeCount) return b.negativeCount - a.negativeCount
+        const aScore = toFiniteNumber(a.scoreValue) ?? 2
+        const bScore = toFiniteNumber(b.scoreValue) ?? 2
+        return aScore - bScore
+      })
+
+    const worstAttribute = worstAttributeByScore
+      || (worstAttributeByNegativeCount?.negativeCount > 0 ? worstAttributeByNegativeCount : null)
+      || {
+        scoreType: AI_ASPECTS[0],
+        scoreValue: toFiniteNumber(scores[AI_ASPECTS[0]]) !== null ? scores[AI_ASPECTS[0]] : null
+      }
+
+    const focusAspects = worstAttribute?.scoreType ? [worstAttribute.scoreType] : AI_ASPECTS
     const rankedNegativeReviews = usableReviews
       .map((review, index) => {
         const prediction = perReviewPredictions[index]
@@ -647,7 +991,6 @@ export const CanBoService = {
         for (const aspect of focusAspects) {
           const value = prediction[aspect]?.prediction
           if (value === 2) severity += 2
-          else if (value === 0) severity += 1
         }
 
         return {
@@ -691,12 +1034,15 @@ export const CanBoService = {
 
       insightRow = await CanBoDbModel.insertHotelInsightSummary({
         hotelId: normalizedHotelId,
-        attributeAffected: worstAttribute.scoreType,
+        attributeAffected: worstAttribute?.scoreType || AI_ASPECTS[0],
         topNegativeKeywords,
         representativeReviews: representativeReviewsText
       })
 
-      const redAspects = AI_ASPECTS.filter((aspect) => scores[aspect] < 0.45)
+      const redAspects = AI_ASPECTS.filter((aspect) => {
+        const score = toFiniteNumber(scores[aspect])
+        return score !== null && score < 0.45
+      })
       if (redAspects.length >= 2 && officialUserId) {
         await CanBoDbModel.createOfficialDailyTask({
           officialUserId: officialUserId,
@@ -714,8 +1060,9 @@ export const CanBoService = {
       throw error
     }
 
-    const overallScore = normalizeScore(average(scoreEntries.map((item) => item.scoreValue)))
-
+    const overallScore = scoreEntries.length > 0
+      ? normalizeScore(average(scoreEntries.map((item) => item.scoreValue)))
+      : null
     return {
       coSo: {
         id: hotel.id,
@@ -736,19 +1083,19 @@ export const CanBoService = {
       },
       ketQuaAi: {
         sentimentLabel,
-        diemTongQuan: round(overallScore, 4),
+        diemTongQuan: roundOptional(overallScore, 4),
         diemThanhPhan: {
-          hygiene: round(scores.hygiene, 4),
-          food: round(scores.food, 4),
-          hotel: round(scores.hotel, 4),
-          location: round(scores.location, 4),
-          room: round(scores.room, 4),
-          service: round(scores.service, 4)
+          hygiene: roundOptional(scores.hygiene, 4),
+          food: roundOptional(scores.food, 4),
+          hotel: roundOptional(scores.hotel, 4),
+          location: roundOptional(scores.location, 4),
+          room: roundOptional(scores.room, 4),
+          service: roundOptional(scores.service, 4)
         },
         chiTietAspect: AI_ASPECTS.reduce((acc, aspect) => {
           acc[aspect] = {
-            diem: round(aspectAverages[aspect].score, 4),
-            doTinCayTrungBinh: round(aspectAverages[aspect].confidence, 4),
+            diem: roundOptional(aspectAverages[aspect].score, 4),
+            doTinCayTrungBinh: roundOptional(aspectAverages[aspect].confidence, 4),
             positive: aspectAverages[aspect].positive,
             negative: aspectAverages[aspect].negative,
             none: aspectAverages[aspect].none
@@ -757,9 +1104,9 @@ export const CanBoService = {
         }, {}),
         insight: {
           thuocTinhAnhHuongNhat: {
-            key: worstAttribute.scoreType,
-            label: ATTRIBUTE_LABELS[worstAttribute.scoreType] || worstAttribute.scoreType,
-            score: round(worstAttribute.scoreValue, 4)
+            key: worstAttribute?.scoreType || AI_ASPECTS[0],
+            label: ATTRIBUTE_LABELS[worstAttribute?.scoreType || AI_ASPECTS[0]] || (worstAttribute?.scoreType || AI_ASPECTS[0]),
+            score: roundOptional(worstAttribute?.scoreValue, 4)
           },
           topTuKhoaTieuCuc: topNegativeKeywords,
           reviewDaiDien: representativeReviews
@@ -771,6 +1118,209 @@ export const CanBoService = {
           evaluatedAt: aiPredictionRow?.last_evaluated_at || new Date().toISOString()
         }
       }
+    }
+  },
+
+  getTongHopThongKeAi: async ({ chiCanhBao = false } = {}) => {
+    let rows
+
+    try {
+      rows = await CanBoDbModel.findHotelsWithLatestAiSummary(5000)
+    } catch (error) {
+      if (isMissingTableError(error)) {
+        throw createMissingHotelTablesError()
+      }
+      throw error
+    }
+
+    const hotels = rows.map((row) => {
+      const insightAttribute = AI_ASPECTS.includes(row.attribute_affected)
+        ? row.attribute_affected
+        : null
+
+      const sentimentLabel = normalizeSentimentValue(row.sentiment_label)
+
+      const diemThanhPhan = AI_ASPECTS.reduce((acc, aspect) => {
+        const score = normalizeOptionalScore(row[`${aspect}_score`])
+        acc[aspect] = score === null ? null : round(score, 4)
+        return acc
+      }, {})
+
+      const scoreValues = Object.values(diemThanhPhan).filter((value) => value !== null)
+      const coDuLieuAi = scoreValues.length > 0
+      const diemTongQuan = coDuLieuAi ? round(average(scoreValues), 4) : null
+      const khuVuc = resolveAreaFromAddress(row.address)
+
+      const canhBaoThuocTinh = AI_ASPECTS
+        .map((aspect) => {
+          const score = diemThanhPhan[aspect]
+          if (score === null || score >= WATCH_SCORE_THRESHOLD) return null
+
+          const isHighRisk = score < HIGH_RISK_SCORE_THRESHOLD
+          return {
+            key: aspect,
+            label: ATTRIBUTE_LABELS[aspect] || aspect,
+            score,
+            mucDoKey: isHighRisk ? 'high' : 'watch',
+            mucDo: isHighRisk ? 'Nguy cơ cao' : 'Cần theo dõi'
+          }
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.score - b.score)
+
+      const highRiskCount = canhBaoThuocTinh.filter((item) => item.mucDoKey === 'high').length
+      const riskMeta = resolveRiskLevel({
+        hasAiData: coDuLieuAi,
+        overallScore: diemTongQuan,
+        highRiskCount,
+        warningCount: canhBaoThuocTinh.length
+      })
+
+      const resolvedInsightAttribute = insightAttribute || canhBaoThuocTinh[0]?.key || null
+
+      return {
+        id: row.id,
+        sourceHotelId: row.source_hotel_id,
+        tenCoSo: row.name || 'Chưa cập nhật',
+        diaChi: row.address || 'Chưa cập nhật',
+        khuVuc: {
+          quanHuyen: khuVuc.district,
+          tinhThanh: khuVuc.city
+        },
+        coDuLieuAi,
+        sentimentLabel: sentimentLabel || 'Unknown',
+        sentimentHienThi: sentimentToUiLabel(sentimentLabel),
+        diemTongQuan,
+        diemThanhPhan,
+        mucDoRuiRoKey: riskMeta.key,
+        mucDoRuiRo: riskMeta.label,
+        canhBaoThuocTinh,
+        insight: {
+          thuocTinhAnhHuongNhat: resolvedInsightAttribute
+            ? {
+                key: resolvedInsightAttribute,
+                label: ATTRIBUTE_LABELS[resolvedInsightAttribute] || resolvedInsightAttribute
+              }
+            : null,
+          topTuKhoaTieuCuc: parseTopNegativeKeywords(row.top_negative_keywords).slice(0, 8),
+          reviewDaiDienTomTat: summarizeRepresentativeReview(row.representative_reviews)
+        },
+        thoiDiemDanhGia: row.last_evaluated_at,
+        thoiDiemTongHopInsight: row.insight_generated_at
+      }
+    })
+
+    const hotelsAfterFilter = chiCanhBao
+      ? hotels.filter((item) => item.canhBaoThuocTinh.length > 0)
+      : hotels
+
+    const sentimentSummary = {
+      positive: 0,
+      negative: 0,
+      neutral: 0,
+      unknown: 0
+    }
+
+    const riskSummary = {
+      high: 0,
+      watch: 0,
+      stable: 0,
+      unrated: 0
+    }
+
+    for (const hotel of hotels) {
+      if (hotel.sentimentLabel === 'Positive') sentimentSummary.positive += 1
+      else if (hotel.sentimentLabel === 'Negative') sentimentSummary.negative += 1
+      else if (hotel.sentimentLabel === 'Neutral') sentimentSummary.neutral += 1
+      else sentimentSummary.unknown += 1
+
+      riskSummary[hotel.mucDoRuiRoKey] += 1
+    }
+
+    const hotelsWithAi = hotels.filter((item) => item.coDuLieuAi)
+    const hotelsWithWarning = hotels.filter((item) => item.canhBaoThuocTinh.length > 0)
+
+    const tongHopPhanLoaiDiem0 = hotels.reduce((acc, hotel) => {
+      for (const aspect of AI_ASPECTS) {
+        const score = hotel.diemThanhPhan?.[aspect]
+        if (isScoreEqual(score, 0)) acc.tongThuocTinh0TieuCuc += 1
+        else if (isScoreEqual(score, NOT_MENTIONED_SCORE)) acc.tongThuocTinh0KhongDeCap += 1
+      }
+
+      return acc
+    }, {
+      tongThuocTinh0TieuCuc: 0,
+      tongThuocTinh0KhongDeCap: 0
+    })
+
+    const thongKeThuocTinh = AI_ASPECTS
+      .map((aspect) => {
+        const scoreValues = hotels
+          .map((item) => item.diemThanhPhan[aspect])
+          .filter((value) => value !== null)
+
+        const soCoSoDiem0TieuCuc = hotels
+          .filter((item) => isScoreEqual(item.diemThanhPhan?.[aspect], 0))
+          .length
+
+        const soCoSoDiem0KhongDeCap = hotels
+          .filter((item) => isScoreEqual(item.diemThanhPhan?.[aspect], NOT_MENTIONED_SCORE))
+          .length
+
+        const soCoSoNguyCoCao = scoreValues.filter((value) => value < HIGH_RISK_SCORE_THRESHOLD).length
+        const soCoSoCanTheoDoi = scoreValues.filter((value) => value >= HIGH_RISK_SCORE_THRESHOLD && value < WATCH_SCORE_THRESHOLD).length
+        const soCoSoOnDinh = scoreValues.filter((value) => value >= WATCH_SCORE_THRESHOLD).length
+
+        return {
+          key: aspect,
+          label: ATTRIBUTE_LABELS[aspect] || aspect,
+          diemTrungBinh: scoreValues.length ? round(average(scoreValues), 4) : null,
+          tongCoSoDaPhanTich: scoreValues.length,
+          soCoSoNguyCoCao,
+          soCoSoCanTheoDoi,
+          soCoSoOnDinh,
+          soCoSoDiem0TieuCuc,
+          soCoSoDiem0KhongDeCap,
+          tongCoSoCanhBao: soCoSoNguyCoCao + soCoSoCanTheoDoi
+        }
+      })
+      .sort((a, b) => {
+        if (b.tongCoSoCanhBao !== a.tongCoSoCanhBao) return b.tongCoSoCanhBao - a.tongCoSoCanhBao
+        if (a.diemTrungBinh === null) return 1
+        if (b.diemTrungBinh === null) return -1
+        return a.diemTrungBinh - b.diemTrungBinh
+      })
+
+    return {
+      generatedAt: new Date().toISOString(),
+      nguongCanhBao: {
+        nguyCoCao: HIGH_RISK_SCORE_THRESHOLD,
+        canTheoDoi: WATCH_SCORE_THRESHOLD
+      },
+      boLoc: {
+        chiCanhBao: Boolean(chiCanhBao),
+        tongSoCoSoTruocLoc: hotels.length,
+        tongSoCoSoSauLoc: hotelsAfterFilter.length
+      },
+      tongQuan: {
+        tongCoSo: hotels.length,
+        coSoDaPhanTichAi: hotelsWithAi.length,
+        tyLePhuAi: hotels.length > 0 ? round((hotelsWithAi.length / hotels.length) * 100, 2) : 0,
+        coSoCoCanhBao: hotelsWithWarning.length,
+        diemTongQuanTrungBinh: hotelsWithAi.length > 0
+          ? round(average(hotelsWithAi.map((item) => item.diemTongQuan)), 4)
+          : null,
+        sentiment: sentimentSummary,
+        mucDoRuiRo: riskSummary,
+        phanLoaiDiem0: tongHopPhanLoaiDiem0
+      },
+      thongKeThuocTinh,
+      thuocTinhCanhBaoNoiBat: thongKeThuocTinh.slice(0, 3),
+      nhomTheoKhuVuc: {
+        quanHuyen: buildAreaGroups(hotelsAfterFilter, 'district'),
+        tinhThanh: buildAreaGroups(hotelsAfterFilter, 'city')
+      },
+      danhSachCoSo: hotelsAfterFilter
     }
   },
 
@@ -1227,7 +1777,8 @@ export const CanBoService = {
     }
 
     const allScores = AI_ASPECTS.map((a) => classToScore(rawPredictions?.[a]?.prediction ?? 0))
-    const overallScore = round(average(allScores), 4)
+    const scoreValues = allScores.filter((score) => toFiniteNumber(score) !== null)
+    const overallScore = scoreValues.length > 0 ? round(average(scoreValues), 4) : null
 
     const posCount = AI_ASPECTS.filter((a) => classToBucket(rawPredictions?.[a]?.prediction) === 'positive').length
     const negCount = AI_ASPECTS.filter((a) => classToBucket(rawPredictions?.[a]?.prediction) === 'negative').length

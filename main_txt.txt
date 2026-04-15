@@ -1,0 +1,1193 @@
+VIETNAMNATIONALUNIVERSITYHOCHIMINHCITY
+UNIVERSITYOFSCIENCE
+FACULTYOFINFORMATIONTECHNOLOGY
+ASPECT-BASEDSENTIMENTANALYSIS
+ONHOTELREVIEWS
+Instructors: BùiTiếnLên,Ph.D.
+VõNhậtTân,M.Sc.
+LêNhựtNam,B.Sc.
+Group–Class: Group5–23KHDL1
+Members: BùiDươngDuyCường–23127033
+LêNguyễnNhật–23127239
+NguyễnVănAn–23127317
+NguyễnAnhKhoa–23127391
+VươngKhảiPhong–23127453
+HoChiMinhCity,April14,2026ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline i
+Contents
+1 ProblemIntroduction 1
+2 DataCollectionObjectivesandScope 2
+3 DataCollectionStrategy 3
+3.1 Collectionofhotelmetadata . . . . . . . . . . . . . . . . . . . . . 3
+3.2 Collectionofdetailedreviews . . . . . . . . . . . . . . . . . . . . 3
+4 DataPreprocessingandCleaning 5
+4.1 Corecleaningsteps . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+4.2 Five-layerprocessingpipeline . . . . . . . . . . . . . . . . . . . . 5
+4.2.1 Layer1–Basictextcleaning . . . . . . . . . . . . . . . . . 6
+4.2.2 Layer2–Vietnamesetypingandslangnormalization . .6
+4.2.3 Layer3–AI-basedspellingcorrection . . . . . . . . . . . 6
+4.2.4 Layer4–Wordsegmentationformachinelearning . . .6
+4.2.5 Layer5–Labelandaspectnormalization . . . . . . . . . 7
+5 AnalysisandProcessingoftheVLSP2018HotelTrainingData 9
+5.1 WhytheVLSPdataneedsrestructuring . . . . . . . . . . . . . . 9
+5.2 Grouping34aspectclassesinto6majoraspects . . . . . . . . . 9
+5.3 Reducingsentimentlabelsto3classes . . . . . . . . . . . . . . . 9
+6 AnalysisoftheLabelingModel 11
+6.1 Threetestedapproaches . . . . . . . . . . . . . . . . . . . . . . . 11
+6.2 Technicaloptimization . . . . . . . . . . . . . . . . . . . . . . . . . 11
+6.3 Fine-tuningProcessandTrainingHyperparameters . . . . . . .12
+7 Post-LabelDataProcessing 14ComprehensiveReportontheAspect-BasedSentimentAnalysisPipelineii
+7.1 Objectivesofthepost-processingstage . . . . . . . . . . . . . . 14
+7.2 Confidencedefinitionusedinthepipeline . . . . . . . . . . . . . 14
+7.3 Confidence-thresholdcalibration . . . . . . . . . . . . . . . . . . 15
+7.4 Confidencefiltering . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+7.5 Rule-basednoisefiltering . . . . . . . . . . . . . . . . . . . . . . . 16
+7.6 Intermediatestepbeforehumanlabeling: the3krelabelpool .16
+7.7 Roleoftherelabelpool . . . . . . . . . . . . . . . . . . . . . . . . 17
+7.8 Evaluationofpost-processingquality . . . . . . . . . . . . . . . . 17
+7.8.1 Question 1: Is the difficult-sample selection strategy
+workingcorrectly? . . . . . . . . . . . . . . . . . . . . . . . 18
+7.8.2 Question2: Whatistheabsolutequalityofthecurrent
+system?. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+7.8.3 Question 3: Is the current system biased toward the
+noneclass? . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+7.8.4 Artifactsforverificationandtraceability . . . . . . . . . . 19
+8 OutputsoftheDataCollectionandProcessingStages 20
+9 ExploratoryDataAnalysis 21
+9.1 DataDescription . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21
+9.2 DataQualityCheck . . . . . . . . . . . . . . . . . . . . . . . . . . . 21
+9.2.1 MissingValuesandDuplicates . . . . . . . . . . . . . . . . 21
+9.2.2 LabelInconsistency . . . . . . . . . . . . . . . . . . . . . . . 21
+9.3 StatisticalAnalysis . . . . . . . . . . . . . . . . . . . . . . . . . . . 22
+9.3.1 RatingDistributionAnalysis . . . . . . . . . . . . . . . . . 22
+9.4 TextStatistics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 22
+9.5 AspectLabelDistribution . . . . . . . . . . . . . . . . . . . . . . . 24
+10Models,Approaches,andEvaluation 25
+10.1ModelingObjectives . . . . . . . . . . . . . . . . . . . . . . . . . . 25ComprehensiveReportontheAspect-BasedSentimentAnalysisPipelineiii
+10.2Approach1: LinearSupportVectorMachine . . . . . . . . . . . 26
+10.3Approach2: ViDeBERTa+Adapter+Multi-Pooling+MSD . .28
+10.4Approach3:PhoBERT+BiGRU+MeanPooling+Multi-Head
+Classification . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30
+10.5EvaluationMetrics . . . . . . . . . . . . . . . . . . . . . . . . . . . 32
+10.6EvaluationResults . . . . . . . . . . . . . . . . . . . . . . . . . . . 33
+10.6.1Approach1: LinearSupportVectorMachine . . . . . . .33
+10.6.2Approach 2: ViDeBERTa + Adapter + Multi-Pooling +
+MSD. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 33
+10.6.3Approach 3: PhoBERT + BiGRU + Mean Pooling +
+Multi-HeadClassification . . . . . . . . . . . . . . . . . . . 34
+10.7Discussion . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 36
+10.7.1Approach1: LinearSupportVectorMachine . . . . . . .36
+10.7.2Approach 2: ViDeBERTa + Adapter + Multi-Pooling +
+MSD. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 36
+10.7.3Approach 3: PhoBERT + BiGRU + Mean Pooling +
+Multi-HeadClassification . . . . . . . . . . . . . . . . . . . 37
+10.8OverallDiscussionandInsights . . . . . . . . . . . . . . . . . . . 38
+11Application 41
+11.1ApplicationObjectives . . . . . . . . . . . . . . . . . . . . . . . . . 41
+11.2SystemWorkflow . . . . . . . . . . . . . . . . . . . . . . . . . . . . 41
+11.3PotentialUseCases . . . . . . . . . . . . . . . . . . . . . . . . . . . 41
+11.4LimitationsinDeployment . . . . . . . . . . . . . . . . . . . . . . 41
+11.5FutureApplicationDirections . . . . . . . . . . . . . . . . . . . . 41
+12References 42ComprehensiveReportontheAspect-BasedSentimentAnalysisPipelineiv
+ListofFigures
+1 DatacollectionpipelinefromAgoda . . . . . . . . . . . . . . . . . 4
+2 Preprocessinganddata-cleaningpipeline . . . . . . . . . . . . . 8
+3 Distributionofoverallratingscoresinthedataset . . . . . . . . 22
+4 Mostfrequentwordsinthefullreviewcorpus . . . . . . . . . . 23
+5 Mostfrequentwordsacrossaspect-specificreviewgroups . . .23
+6 Sentiment-labelproportionsacrossaspects . . . . . . . . . . . . 24
+7 Training/validationlossandvalidationmacro-F1forthefine-
+tunedViDeBERTamodel . . . . . . . . . . . . . . . . . . . . . . . . 33ComprehensiveReportontheAspect-BasedSentimentAnalysisPipelinev
+ListofTables
+1 Datacollectionsetup . . . . . . . . . . . . . . . . . . . . . . . . . . 2
+2 Datacollectionresultsbyphase . . . . . . . . . . . . . . . . . . . 4
+3 Summaryofthemulti-layerpreprocessingpipeline . . . . . . . 7
+4 Datasetsizeacrosspreprocessingandlabelingstages . . . . .7
+5 VLSPdatasetstatisticsafter3-classnormalization . . . . . . . . 10
+6 PhoBERTperformancebyaspect . . . . . . . . . . . . . . . . . . 12
+7 Confidence-thresholdcomparisononthedevset . . . . . . . . . 15
+8 Confidence-filteringresultsonthecrawleddataset . . . . . . .15
+9 Noise-filteringresultsafterconfidencefiltering . . . . . . . . . 16
+10 Actualcompositionofthe3krelabelpool . . . . . . . . . . . . . 17
+11 Percentagedistributionofsentimentlabelsacrossaspects . . .24
+12 HyperparameterconfigurationoftheTF-IDF+LinearSVM . .27
+13 Hyperparameter configuration of the fine-tuned ViDeBERTa
+model. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 29
+14 Hyperparameter configuration of the fine-tuned PhoBERT-
+BiGRUmulti-headclassifier . . . . . . . . . . . . . . . . . . . . . . 31
+15 Aspect-level performance of the Linear Support Vector Ma-
+chinemodelonthetestset . . . . . . . . . . . . . . . . . . . . . . 33
+16 Aspect-levelperformanceofthefine-tunedViDeBERTamodel
+onthetestset . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 34
+17 TestperformanceofthePhoBERT+BiGRU6-headmodel . . .35ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline1
+1.ProblemIntroduction
+ThedemandforbuildingautomatedfunctionsfortheapplicationoftheMin-
+istryofCulture,SportsandTourismarisesfromthebroadertrendofdigital
+transformationandautomationincustomer-feedbackanalysis. Theprob-
+lemaddressedinthisprojectisthepredictionofservice-relatedindicators
+basedontextualreviewsanduserratings,therebysupportingrecommen-
+dationsandoperationalimprovementstrategies.
+Withinthescopeofthisreport,theteamfocusesontheproblemof Aspect-
+BasedSentimentAnalysis (ABSA)onhotelreviews.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline2
+2.DataCollectionObjectivesandScope
+Thedatacollectionstageaimstobuildahotel-reviewdatasetthatissuffi-
+cientlylarge,reliable,andalignedwiththeintendeddeploymentcontext.
+TheselectedsourceistheAgodabookingplatform,focusingonhotelsinDa
+Nangforahypotheticalstayperiodfrom June1,2025 toJune7,2025 .
+ThemaintoolsusedarePythonandSeleniumWebDriverforcrawling,to-
+getherwithPandasandLangdetectfortheinitialpreprocessingsteps.
+Table1: Datacollectionsetup
+Attribute Description
+Datasource Agoda
+Studyarea DaNangCity
+Hypothetical
+stayperiodJune1,2025–June7,2025
+Datatype Hotelmetadataanduserreviews
+Collectiontools Python,SeleniumWebDriver
+Preprocessing
+toolsPandas,Langdetect
+Targetoutput Vietnamesehotel-reviewdatasetforABSAComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline3
+3.DataCollectionStrategy
+The data collection strategy is divided into two phases: collecting hotel
+metadata and collecting detailed reviews. This design ensures that the
+dataset contains both high-level contextual information about each hotel
+anddetailedtextualfeedbackforsentimentanalysis.
+3.1.Collectionofhotelmetadata
+Inthefirstphase,SeleniumisusedtohandleAgoda’s lazy-loadingmecha-
+nismbycombiningpagescrollingwithappropriatewaitingtimessothatall
+hotelcardsarefullyloadedbeforeextraction. Thedataiscollectedpage
+bypageuntilthefullcandidatelistisexhausted.
+Toensure bothrepresentativeness andpreliminary quality, the following
+initialfiltersareapplied:
+•Hotels missing important fields such as rating or review count are
+removed.
+•Onlyhotelswithatotalnumberofreviewsbetween 100and1000are
+retainedtoavoidextremelysparseoroverlydilutedcases.
+Thisphaseyields 402hotelsthatsatisfytheinitialfilteringcriteria.
+3.2.Collectionofdetailedreviews
+Fromthefilteredhotellist,thesystemvisitseachhotelURLtoextractde-
+tailed review content. During this process, the team prioritizes Agoda’s
+built-intranslationfeatureinordertoobtainVietnamesetextforinterna-
+tional reviews, thereby improving language consistency in the collected
+data.
+Hotelswithoutreviewsorhotelsthatfailduringpageloadingareskipped
+topreventinterruptionsinthelarge-scalecrawlingprocess.Aftercomple-
+tion,thecollecteddatasetcontains 392hotelswithatotalof 41,344raw
+reviews.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline4
+Table2: Datacollectionresultsbyphase
+Item Count
+Hotels satisfying metadata
+criteria402
+Hotels with successfully col-
+lectedreviews392
+Totalrawreviews 41,344
+Agodasource
+Collecthotel
+metadata
+Missingdatahandling
+Initialfiltering(100–1000reviews)
+Collectdetailed
+reviews
+Rawreviewdataset
+Figure1: DatacollectionpipelinefromAgodaComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline5
+4.DataPreprocessingandCleaning
+After collection, the raw dataset is further cleaned to remove noise, im-
+provelanguageconsistency,andpreparethedatafordownstreammachine
+learningmodels.
+4.1.Corecleaningsteps
+Themaincleaningoperationsaresummarizedasfollows:
+•Languagedetection:
+–ThelangdetectlibraryisusedtoretainonlyVietnamesereviews.
+–Objective:RemovenoisefromEnglishreviewsorreviewswritten
+inotherlanguagesthatarenotrelevanttoVietnameseNLPmodel
+training.
+•Deduplication:
+–Duplicaterecordsareremovedbasedon review_id.
+•Empty-datafiltering:
+–Recordswithmissingtextualcontent(NaNoremptystrings)or
+missingratingvaluesareremoved.
+•Heuristicnoisefiltering:
+–Threshold-basedrulesareappliedtoremoveoverlyshortreviews,
+which typically provide little value for aspect-level analysis, as
+wellasreviewswithanexcessivelyhighratioofspecialcharacters
+ordigitsrelativetoalphabeticcharacters.
+Afterpassingthroughthefilteringstagesabove,thedatasetshowsaclear
+reductioninsize:
+•Initialrawdata: 41,344records.
+•Dataaftercleaning: 37,327records(areductionofapproximately
+9.7%).
+4.2.Five-layerprocessingpipeline
+Aftertheinitialfilteringstage,thedataispassedthroughfiveadditional
+processinglayers.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline6
+4.2.1.Layer1–Basictextcleaning
+Thefirstlayerremovesdirectsourcesoftextualnoise:
+•Removingveryshortreviews(fewerthan5words),duplicates(bycon-
+tent),andemptyvalues.
+•UsingregularexpressionstoremoveHTML,emoji, URLs, emailad-
+dresses,phonenumbers,andhashtags.
+•RetainingonlyVietnamesecharactersandbasicdigitswhilenormal-
+izingwhitespace.
+Example:“ksdepquá!!! xemtạihttp://abc.com →“ksdepquá
+4.2.2.Layer2–Vietnamesetypingandslangnormalization
+ThesecondlayerstandardizesVietnamesewritingconventions:
+•UnifyingUnicoderepresentationsintoasinglestandardform.
+•Normalizingwronglyplacedtonemarks.
+•Mappingcommonabbreviationsandslang,forexample ksto“khách
+sạn,” nvto“nhânviên,”and koto“không.”
+Example:“ksnaykototlam →“kháchsạnnàykhôngtốtlắm
+4.2.3.Layer3–AI-basedspellingcorrection
+Tohandlespellingandgrammarerrorsatscale,thesystemintegratesthe
+bmd1905/vietnamese-correction-v2 TransformerSeq2Seqmodel. Com-
+paredwithmanualrulewriting,thisapproachismoreautomatedandflex-
+ibleforthediverseerrorpatternsfoundinrealreviews. Inferenceisopti-
+mizedwithbatchprocessing,mixedprecision,andfastdecodingstrategies
+suitablefortensofthousandsofreviews. Example:“phògsachsenhưng
+nhânvienchuanhiettinh →“phòngsạchsẽnhưngnhânviênchưanhiệt
+tình;“hàihoà →“hàihòa
+4.2.4.Layer4–Wordsegmentationformachinelearning
+Vietnamese contains many multi-syllabic words and compound expres-
+sions,sowordsegmentationisanecessarystepbeforefeedingthetextinto
+languagemodelsorclassicalfeature-basedpipelines. ThislayerimprovesComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline7
+inputconsistencyandreducesvocabularyfragmentation. Example:“nhân
+viênthânthiện →“nhân_viênthân_thiện
+4.2.5.Layer5–Labelandaspectnormalization
+Inthefinalpreprocessingstage,thelabelspaceisrestructuredtobetter
+supporttheABSAtask. Thesystemgroups34fine-grainedaspectlabels
+into 6 broader categories aligned with the hotel-review domain: Clean-
+liness,Hotel,Rooms,Food & Drinks ,Location, andService. At the
+sametime,sentimentlabelsarereducedfrom5to3classes: 0–Notmen-
+tioned,1–Positive,and2–Negative .Thegroupingruleprioritizesneg-
+ative sentiment in ambiguous cases so that important service issues are
+notoverlooked. Example: "Wifi": negative, "internet": negative →
+Service: 2
+Table3: Summaryofthemulti-layerpreprocessingpipeline
+Layer Processingstep Mainobjective
+1Basiccleaning Removenoisyrecords,HTML,emoji,
+URLs,extrasymbols,andveryshort
+texts
+2Vietnamesetyping
+normalizationStandardizeUnicode,tonemarks,
+andslangdictionaries
+3AI-basedspelling
+correctionAutomaticallyfixspellingandgram-
+marerrorsatscale
+4Wordsegmentation Normalizemodelinputandreduce
+vocabularyfragmentation
+5Aspect-labelnor-
+malizationGroupaspectsandreducesentiment
+labelsto3classes
+Table4: Datasetsizeacrosspreprocessingandlabelingstages
+Datamilestone Rows Notes
+Inputafter
+crawling37,324 Inputdatasetaftercrawlingandover-
+allcleaning
+Afterprepro-
+cessing35,183 Reducedby2,141rowscomparedwith
+theinput
+Afterlabeling 35,183 Norow-countchangecomparedwith
+thepost-preprocessingdatasetComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline8
+41,344rawreviews
+Languageand
+duplicatefiltering
+Regex-based
+textcleaning
+Unicode,slang,
+andtonenormalization
+AI-basedspelling
+correction
+Wordsegmentation
+Aspectandsentiment
+normalization
+Figure2: Preprocessinganddata-cleaningpipelineComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline9
+5.Analysis and Processing of the VLSP 2018
+HotelTrainingData
+The PhoBERT model used in the current stage is trained on the VLSP
+2018 Hotel benchmark dataset. However, the original VLSP labels are
+highlyfragmented,sobeforetraining,theteamperformsamajorrestruc-
+turingsteptoconvertthedatasetintoamoresuitableformatforreal-world
+Aspect-BasedSentimentAnalysis.
+5.1.WhytheVLSPdataneedsrestructuring
+The original data is organized in the form “Entity–Attribute,” produc-
+ing approximately 34 aspect classes such as ROOMS#CLEANLINESS ,
+HOTEL#DESIGN , and FOOD#QUALITY . This design leads to an extremely
+sparse label matrix, because a real review rarely addresses all these
+aspects simultaneously. As a result, the model struggles to learn stable
+signalsanditsrepresentationalcapacitybecomesoverlydispersed.
+5.2.Grouping34aspectclassesinto6majoraspects
+To address this issue, the team groups the fine-grained labels into 6
+broaderaspects thatarebetteralignedwithrealhotel-reviewinsights:
+•Cleanliness : aggregates all cleanliness-related attributes across
+rooms,hotels,andfacilities.
+•Hotel:includesgeneral,hotel-levelattributes,includingformerlyam-
+biguouslabelssuchas FACILITIES.
+•Rooms:coversroom-relatedattributesandroomamenitieswhilesep-
+aratingthemfromcleanlinesstoavoidoverlap.
+•Food & Drinks ,Location, andService: remain mostly intact be-
+causetheyalreadyformdistinctcategories.
+5.3.Reducingsentimentlabelsto3classes
+Inadditiontoreducingthenumberofaspects,thesentiment-labelspace
+isalsosimplified. Theoriginaldatasetcontainsseveralsentimentstates
+suchaspositive,negative,neutral,conflict,andnotmentioned.Toimprove
+trainingconsistency,theprojectreducesthemto 3finalclasses :ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline10
+•0: Notmentioned.
+•1: Positive.
+•2: Negative.
+When multiple sub-columns are merged into a larger aspect, the system
+applies a strict negative rule: if positive and negative counts are tied, or
+ifnegativeslightlydominates,themergedlabelisassignedas negative.
+Thishelpsthemodelprioritizeservice-relatedissuesratherthanflattening
+importantnegativesignals.
+Table5: VLSPdatasetstatisticsafter3-classnormalization
+Split Role Notmentioned Positive Negative
+Train Mainknowledge
+sourceformodel
+training8852 6948 2200
+Dev In-trainingevalu-
+ationandconver-
+gencemonitoring6625 3982 1393
+Test Independentfinal
+evaluation1722 1377501
+Overall, the VLSP restructuring step transforms a highly fragmented la-
+belspaceintoamorecompactandinformativerepresentationformachine
+learning. ThisformsthefoundationthatenablesPhoBERTtoachievebet-
+teraccuracywhenusedasalarge-scalepseudo-labelerforreal-worldhotel
+reviews.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline11
+6.AnalysisoftheLabelingModel
+Theprojectuses PhoBERTasthecorearchitectureformulti-aspectsen-
+timentlabeling. Duringdevelopment, theteamexperimentedwiththree
+approachesbeforeselectingthefinalconfiguration.
+6.1.Threetestedapproaches
+•Approach1–Basicbaseline :retainstheoriginalaspectsetandthe
+fullsentiment-labelspace.Thisapproachperformspoorlybecausethe
+labelspaceistoofragmented,especiallywithambiguousboundaries
+betweenlabelssuchasneutralandconflict.
+•Approach2–Domain-awarerefinement :replacessomelessmean-
+ingfulaspectswith Cleanlinessandstartsusing Focal Loss. Althoughit
+ismoreconsistentwiththehoteldomain,performanceremainslim-
+itedbecausemanynoisylabelsarestillretained.
+•Approach3–Optimized3-classsetting : reducestheentiresenti-
+mentspacetothreeclasses– not mentioned ,positive,and negative.This
+finalapproachisselectedbecauseitallowsthemodeltofocusonthe
+mostmeaningfulsentimentsignals.
+Thecombinationofacleanedaspectset,acompactlabelspace,andamore
+suitablelossfunctionallowsPhoBERTtolearnminoritycasesmoreeffec-
+tively,especiallythenegativeclass.
+Inthetrainingstage,themodeluses Focal Lossinthefollowingform:
+•Sample-wisecross-entropy: CE i=−log(pt)
+•Focalterm: FL i=α(1−pt)γCE i
+•Mini-batchaverageloss:
+L=1
+N∑
+iFL i
+Thevaluesusedintheimplementationare α= 1.0andγ= 2.0.
+6.2.Technicaloptimization
+Thetechnicalsetupisdesignedtoimprovebothtrainingstabilityandhard-
+wareefficiency:ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline12
+•Lossfunction :Focal Lossisusedinsteadof Cross Entropy toaddress
+labelimbalance.
+•Memoryoptimization :Gradient Accumulation and Mixed Precision are
+usedtoincreasetheeffectivebatchsizeonGPU.
+•Trainingmonitoring :Early Stopping isappliedbasedonF1-scoreand
+accuracytopreventoverfitting.
+Table6: PhoBERTperformancebyaspect
+Aspect Accuracy MacroF1
+Cleanliness 0.8183 0.8043
+Foodanddrinks 0.9417 0.9143
+Hotel 0.7733 0.7388
+Location 0.9450 0.8423
+Rooms 0.8367 0.8339
+Service 0.9117 0.8415
+Theoverallmodelperformancereaches Accuracy = 0.9141 andMacro
+F1=0.8813 ,indicatingstronggeneraleffectivenessacrossthefullaspect-
+labelingtask.
+Theresultsshowthatthemodelperformsespeciallywellonaspectssuch
+asFood & Drinks ,Location, and Service, while Hoteland Cleanlinessremain
+morechallengingbecauseofbroadersemanticsandhigheroverlap. Nev-
+ertheless,theoverallperformanceisstrongenoughforPhoBERTtoactas
+ahigh-confidencepseudo-labelerforthecrawleddataset.
+6.3.Fine-tuningProcessandTrainingHyperparameters
+To automate the annotation process for the newly crawled dataset, the
+pre-trainedPhoBERTmodel( vinai/phobert-base )wasfine-tunedonthe
+benchmarkVLSP2018Hoteldataset. Thefine-tuningprocessadaptsthe
+robust linguistic representations of PhoBERT to the specific nuances of
+Aspect-BasedSentimentAnalysis(ABSA).
+Fine-tuningWorkflow:
+•Data Representation: Input reviews are first pre-processed
+(including Unicode normalization and word segmentation using Vn-
+CoreNLP/BPE) and tokenized to match PhoBERT’s vocabulary. TheComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline13
+resultingtokensequencesarefedintothetransformerencoder.
+•Model Adaptation: While the core transformer layers are initial-
+izedwithpre-trainedweights,atask-specificclassificationheadisap-
+pendedtothetoplayer. Insteadoftrainingfromscratch,themodel
+fine-tunestheseweightstomapthecontextualized [CLS]representa-
+tiontotheappropriateaspect-sentimentpairs.
+•Inference and Pseudo-labeling: Once the optimal weights are
+achieved, themodelisdeployedasanautomatedannotator. Itpro-
+cessesthelarge-scale,unlabelledcrawleddatatoconfidentlypredict
+aspect and sentiment labels, generating a high-quality dataset for
+downstreamapplications.
+HyperparameterConfiguration:
+Careful tuning of hyperparameters was crucial to ensure stable conver-
+genceandpreventoverfitting.Thefinalmodelwastrainedwiththefollow-
+ingsettings:
+•Pre-trainedBase: vinai/phobert-base
+•MaximumEpochs: 15
+•Batch Size: 8 (chosen to maintain stable gradient updates within
+hardwareconstraints).
+•Peak Learning Rate: 2×10−5(implemented with a scheduler for
+smoothweightupdates).
+•EvaluationStrategy: Themodelwasevaluatedonthedevelopment
+set,andcheckpointsweresavedevery500steps.
+•Early Stopping: Configured with a patience of 3 evaluation steps.
+ThesystemmonitoredtheMacroF1-scoretohalttrainingautomat-
+ically if no improvement was observed, effectively preventing the
+modelfrommemorizingthetrainingdata.
+TrainingConvergence:
+Accordingto the training logs, the model demonstratedefficient conver-
+gence. Theoptimalweightswerecapturedat GlobalStep5625 (exactly
+attheendofEpoch5.0). Atthischeckpoint,themodelachieveditspeak
+validationmetrics(Accuracy=0.9141,MacroF1=0.8813). Thisspecific
+checkpoint was restored and utilized for all subsequent baseline evalua-
+tionsandthefinalmassivepseudo-labelingtask.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline14
+7.Post-LabelDataProcessing
+AfterPhoBERTassignslabelstothecrawleddataset, theteamperforms
+a post-processing pipeline to produce a cleaner, more stable, and more
+auditabletrainingdataset. Ratherthansimplydiscardinglow-confidence
+samples,thepipelineisdesignedtobothfilterdatafortrainingandretain
+difficultcasesforevaluationandlaterhumanlabeling.
+7.1.Objectivesofthepost-processingstage
+Thisstagehasthreemaingoals:
+1.Select the optimal confidence threshold on a validation set with
+groundtruth.
+2.Removelow-confidencepseudo-labelstoreducenoiseinthetraining
+data.
+3.Builda relabel poolofapproximately3,000difficultsamplesforsubse-
+quent human labeling .
+Fromatechnicalperspective,thepost-processingpipelineconsistsofthree
+consecutive steps: threshold calibration ,confidence filtering , and
+rule-basednoisefilteringcombinedwithrelabel-poolcreation . This
+separation makes pseudo-label quality easier to evaluate and simplifies
+artifacttrackingforeachstage.
+7.2.Confidencedefinitionusedinthepipeline
+Eachlabeledsamplecomeswithsixprobabilitiescorrespondingtothesix
+aspects. Fromtheseprobabilities,theteamdefinestwoaggregateconfi-
+dencemeasures:
+•conf_mean:themeanofthesixprobabilities,representingtheoverall
+confidenceofthesample.
+•conf_min: the minimum of the six probabilities, representing the
+weakestaspect-levelconfidence.
+Usingbothmeasuresisimportantbecauseasamplemayhavearelatively
+highaverageconfidencewhilestillcontainingoneveryweakaspectpredic-
+tion. Inmulti-aspectlearning,evenoneincorrectlocallabelcandegrade
+thetrainingsignal.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline15
+7.3.Confidence-thresholdcalibration
+Theteamscansthresholds0.70,0.75,0.80,and0.85ontheVLSP devsplit.
+For each threshold, only samples satisfying conf_mean ≥thresholdare
+retained,andpredictionsarecomparedagainstgroundtruthtocompute
+macro F1and micro F1.
+Table7: Confidence-thresholdcomparisononthedevset
+Threshold Keptrows Keptratio F1-macro F1-micro
+0.7019570.9785 0.8451 0.8838
+0.7518660.9330 0.8522 0.8905
+0.8015580.7790 0.8635 0.9037
+0.858960.4480 0.8872 0.9295
+From these results, the team selects threshold_best = 0.85 because it
+achievesthehighestmacroF1andisconsistentwiththegoalofprioritizing
+datacleanlinessovermaximumsampleretention.
+7.4.Confidencefiltering
+Whenappliedtothecrawleddataset,asampleisretainedonlyifitsatisfies
+bothconditions:
+•conf_mean ≥0.85
+•conf_min ≥0.5
+Thesecondconditionactsasasafetyfloorfortheweakestaspect. Itpre-
+ventscaseswheretheaverageconfidenceisdeceptivelyhighwhileatleast
+oneaspectisstillclosetorandom.
+Table8: Confidence-filteringresultsonthecrawleddataset
+Metric Value
+Beforefiltering 35,183
+Afterfiltering 17,295
+Removed 17,888
+Retention 49.16%
+Meanconf_mean 0.8416 →0.8869
+Meanconf_min 0.6854 →0.7814ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline16
+7.5.Rule-basednoisefiltering
+On top of confidence filtering, the team applies several manual rules to
+removesampleswithahighprobabilityofbeingnoisyoruninformative:
+•rule_full_none : allaspectsarelabeled0.
+•rule_all_same_pos : allaspectsarelabeled1.
+•rule_all_same_neg : allaspectsarelabeled2.
+•rule_text_too_short : the review is too short, with token <4or
+char <15.
+Table9: Noise-filteringresultsafterconfidencefiltering
+Metric Value
+Step-3input 17,295
+Step-3keep 16,309
+Step-3removed 986
+Step-3retention 94.30%
+rule_full_none 731
+rule_all_same_pos 102
+rule_all_same_neg 0
+rule_text_too_short 158
+Meanconf_mean 0.886866 →0.887279
+Meanconf_min 0.781388 →0.782985
+TheseresultsshowthatStep3removesonlyasmallfractionofdata,but
+inahighlyselectiveway,makingthefinalretainedsetmorestablewithout
+substantiallychangingtheoverallconfidencedistribution.
+7.6.Intermediatestepbeforehumanlabeling: the3kre-
+labelpool
+Insteadoffullydiscardingtheremovedsamples,theteamkeepsthemto
+builda relabel poolofabout3,000samples ,focusedonthedifficultregion
+ofthedatadistribution.Thesamplingstrategyisdividedintothreegroups:
+•Hard sample (about70%): sampleswith conf_meaninthedifficult
+range0.75–0.80orwith conf_min <0.6.
+•Medium confidence (about 20%): samples with conf_meanin theComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline17
+range0.80–0.90.
+•Randomsample (about10%): randomlyselectedfrombothborder-
+lineremovedcasesandpartoftheretainedset.
+Table10: Actualcompositionofthe3krelabelpool
+Component Count
+Totalsamples 3000
+Hard 2100
+Medium 566
+Random 274
+Fallback 60
+The fallbackcomponent appears when some buckets do not contain
+enough unique samples or have too much duplication. In those cases,
+the script automatically fills the gap from the remaining pool while still
+preservingastrongemphasisondifficultsamples.
+7.7.Roleoftherelabelpool
+Keepingandrelabelingdifficultsampleshelpspreventthemodelfrombe-
+comingover-specializedoneasy,overlyclean,andoverlyconfidentcases.
+Inparticular,thisstepprovidesthreemajorbenefits:
+1.Itreducesoverfittingtoeasy high-confidence samples.
+2.It injects human feedback into the decision boundary , where pseudo-
+labelsaremosterror-prone.
+3.It reduces systematic pseudo-label bias in ambiguous or sentiment-
+conflictcases.
+7.8.Evaluationofpost-processingquality
+Afterthefilteringandrelabel-poolconstructionstages,theteamevaluates
+dataqualitythroughthreemainquestions. Thispartnolongerremainsat
+theplanningstage;instead,itdirectlyusesthemostrecentauditresults
+toanswereachquestion.
+Inthecurrentsetting,thecrawleddatanolongerhasanoriginalpseudo-
+labelsnapshotbyversion,so before/aftercomparisonisnotpossible.There-ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline18
+fore,theevaluationisconductedin single-systemaudit mode,meaning
+thatthecurrentsystemisevaluateddirectlyagainsthumanlabels.
+7.8.1.Question1: Isthedifficult-sampleselectionstrategyworking
+correctly?
+The sample error rate bygroupis:
+•fallback: 0.8500
+•hard: 0.8257
+•medium: 0.7633
+•random: 0.7044
+Themostimportantpairwisetestsarealsostatisticallysignificant:
+•hardvs. random: p= 2.0369×10−6
+•hardvs. medium: p= 9.0628×10−4
+•fallbackvs. random: p= 3.2191×10−2
+These results indicate that the current sampling strategy is indeed cap-
+turing the difficult region . The hardand fallbackgroupsaregenuinely
+harderthanthe randomgroup,soQ1isconsideredsuccessful.
+7.8.2.Question2: Whatis theabsolute qualityofthe currentsys-
+tem?
+Sincethereisnoearlierpseudo-labelbaselineforcomparison,Q2isinter-
+pretedasanabsolutequalitymeasurementofthecurrentsystemagainst
+humanlabels. Theoverallresultsare:
+•macroF1: 0.7299
+•microF1: 0.7564
+Theweakestaspectis hotel,withamacroF1ofonly0.5723.Thissuggests
+thatthecurrentsystemisalreadyusablewithinthepipeline,butitsquality
+isstillunevenacrossaspects.
+7.8.3.Question 3: Is the current system biased toward the none
+class?
+The none over-prediction ratio byaspectis:ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline19
+•service: 1.4977
+•cleanliness: 1.4388
+•location: 1.2315
+•rooms: 1.1229
+•foodanddrinks: 0.9634
+•hotel: 0.5468
+Valuesabove1indicatethatthemodelstillover-predicts noneforseveral
+aspects,mostnotably service,cleanliness,andlocation. Therefore,Q3
+showsthatthe none-biasissuehasnotyetbeenfullyresolved.
+7.8.4.Artifactsforverificationandtraceability
+Eachstageofthepost-processingpipelineproducesitsownartifactssothat
+the workflow remains auditable and reproducible. In the filtering stage,
+filesareorganizedbyStep1,Step2,andStep3,includingthreshold-scan
+results,scoredoutputs,retainedoutputs,removedoutputs,andsummary
+files.
+Aftertheevaluationstage,thesystemalsoproducesdedicatedauditarti-
+factsforQ1–Q3,suchasgroup-levelerrorsummaries,pairwisestatistical
+tests, absolute-quality reports by aspect, and reports on none-class bias.
+Preservingalltheseartifactsisessentialbecauseitturnspost-processing
+from a simple cleaning stage into a reproducible quality-control frame-
+work.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline20
+8.OutputsoftheDataCollectionandProcess-
+ingStages
+Fromtheabovepipeline,theteamobtainsastructuredinputdatasetwith
+sufficientqualityforautomaticlabelingbyPhoBERT.Themainvalueofthis
+stageliesinthreekeyoutcomes:
+1.The data collection process is clearly aligned with both the target
+problemandthepracticaldeploymentcontext.
+2.Themulti-layercleaningpipelinesignificantlyreducesnoiseinViet-
+nameseuserreviews.
+3.Thenormalizationofaspectsandsentimentlabelsprovidesastrong
+foundationfortrainingandevaluatingABSAmodelsinthenextstages.
+Overall,thedatacollectionandprocessingstageservesasthefoundation
+oftheentireaspect-basedsentimentanalysispipeline.Thequalityofthese
+stepsdirectlydeterminesthereliabilityofthelabelingmodelandtheuse-
+fulnessofthefinaltrainingdatasetinsubsequentstages.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline21
+9.ExploratoryDataAnalysis
+9.1.DataDescription
+Thedatasetisdividedintothreemainsplits:
+•Trainingset: 13,224samples.
+•Validationset: 3,778samples.
+•Testset:1,889samples.
+Thedatasetcontainsthefollowingcolumns:
+•Review:ReviewtextwritteninVietnamese.
+•Rating:Overallratingscorerangingfrom1to10.
+•Aspect labels: Six aspect-specific label columns: vệ sinh_label, đồ
+ănthứcuống_label,kháchsạn_label,vịtrí_label,phòngốc_label,and
+dịchvụ_label.
+–Labelconvention: 0=notmentioned/neutral,1=positive,and
+2=negative.
+9.2.DataQualityCheck
+9.2.1.MissingValuesandDuplicates
+No missing values are found in any critical fields across all three splits
+(training,validation,andtest). Inaddition,noduplicatedrecordsarede-
+tectedinthedataset.
+9.2.2.LabelInconsistency
+Across-checkisconductedbetweentheoverallratingscoresandtheneg-
+ativelabels:
+•Rating =10withatleastonenegativelabel: 281samples(2.13%).
+•Rating ≥9withatleasttwonegativelabels: 59samples(0.45%).
+•Rating ≤4withatleasttwopositivelabels: 21samples(0.16%).
+•Conclusion: Theinconsistencyrateisverylow. Manualinspection
+suggeststhatthesecasesmostlyreflectmixed-sentimentreviews,in
+whichuserspraiseoneaspectwhilecriticizinganother, ratherthan
+annotationerrors.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline22
+9.3.StatisticalAnalysis
+9.3.1.RatingDistributionAnalysis
+Figure3: Distributionofoverallratingscoresinthedataset
+•Mean:8.61.
+•Median:9.0.
+•Distributionpattern: Theratingdistributionisleft-skewed,indicat-
+ingthatmostcustomerstendtogivepositiveratingsinthe8–10range.
+Lowratings(2–5)accountforonlyasmallproportionofthedataset.
+9.4.TextStatistics
+Reviewlength(tokencount):
+•Min:3tokens.
+•Max:205tokens.
+•Mean:31tokens.
+Keywordfrequency(overallandbyaspect)ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline23
+Figure4: Mostfrequentwordsinthefullreviewcorpus
+Figure5: Mostfrequentwordsacrossaspect-specificreviewgroups
+•Positive stay-centric focus: The word clouds and dominant key-
+words(e.g.,phòng,khách_sạn,nhân_viên,sạch_sẽ,tuyệt_vời)indicate
+thatthereviewsprimarilyrevolvearoundthecoreaccommodationex-
+perienceandgenerallyexpresspositivesentiment.
+•Featureoverlap: Thereisnoticeablekeywordoverlapacrossdiffer-
+entaspects, suggestingadegreeofcontentcorrelationorsemantic
+overlapbetweencategoriesthatshouldbeconsideredduringmodel
+analysis.
+Text cleanliness: The dataset is relatively clean, containing 2,235,922
+charactersbutonly105uniquespecialcharacters.Specialsymbolsappear
+infrequently, while the underscore character (_) occurs often because of
+Vietnamesewordsegmentation.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline24
+9.5.AspectLabelDistribution
+Table11: Percentagedistributionofsentimentlabelsacrossaspects
+Aspect 012
+dịchvụ_label 52.155 43.724 4.121
+kháchsạn_label 23.503 68.618 7.880
+phòngốc_label 57.887 29.598 12.515
+vệsinh_label 70.395 23.858 5.747
+vịtrí_label 63.793 34.082 2.125
+đồănthứcuống_label 82.880 13.090 4.031
+Figure6: Sentiment-labelproportionsacrossaspects
+•Mentionfrequency: ThemostfrequentlydiscussedaspectsareHo-
+tel(76.5%),Service(47.8%),andRoom(42.1%),whereasFood&Bev-
+erageistheleastmentionedaspect(17.1%).
+•Top strengths: Usersatisfactionisparticularlyhighfortheoverall
+Hotelexperience(68.62%positive),followedbyService(43.72%)and
+Location(34.08%).
+•Majorpainpoints: Roomemergesasthemainweakness,withthe
+highestnegativerateoverall(12.5%).
+•Datasparsityinclass0: Thedominanceofclass0acrossmultiple
+aspectsindicatesalargenumberofgenericreviewsthatdonotmen-
+tionspecificaspectcategories.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline25
+10.Models,Approaches,andEvaluation
+10.1.ModelingObjectives
+The model is designed to solve the multi-label Aspect-Based Sentiment
+Analysis(ABSA)taskinthehoteldomain. Specifically,themodelneedsto
+simultaneouslypredictthesentimentscoresforsixindependentaspects:
+Hygiene, Food and Beverage, Hotel, Location, Room, and Service.
+Tocomprehensivelyaddressthisproblemandevaluatedifferentmethod-
+ologies,theresearchteamimplementedthreedistinctapproaches:
+•Approach1: AtraditionalmachinelearningmethodutilizingSupport
+VectorMachine(SVM)combinedwithTF-IDFfortextfeatureextrac-
+tion.
+•Approach2: Aparameter-efficientdeeplearningmethodusingViDe-
+BERTa combined with Houlsby Adapters, Multi-Pooling, and Multi-
+SampleDropout(MSD).
+•Approach3: Ahybridsequence-learningmethodusingPhoBERTwith
+BiGRUandmaskedmeanpooling,formulatedasamulti-headclassi-
+ficationproblemwithsixaspect-specificheads.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline26
+10.2.Approach1: LinearSupportVectorMachine
+Thismethodutilizesatraditionalmachinelearningpipeline,leveragingthe
+linearkerneloftheLinearSupportVectorMachine(LinearSVC)combined
+with TF-IDF vectorization for multi-aspect classification. To ensure high
+computational efficiency and interpretability on local hardware while ef-
+fectivelyhandlingthemulti-labelnatureofhotelreviews,themodelincor-
+poratesthefollowingtechniques:
+•Architecture
+–FeatureExtraction: TheprocessedVietnamesetextisconverted
+into numerical vectors using TF-IDF (Term Frequency-Inverse
+Document Frequency). This method captures the importance
+ofspecificsentiment-bearingwordswhiledownscalingcommon
+stopwords.
+–Classifier:ThecoremodelisaLinearSupportVectorMachine
+(LinearSVM).Tohandlethemulti-aspectnatureoftheproblem,a
+One-Vs-Rest(OvR)strategyisemployed,whereaseparatebinary
+SVMclassifieristrainedforeachofthesixhotelaspects.
+•TrainingSetup
+–Hyperparameters: The SVM uses a linear kernel to maintain
+high-dimensional efficiency with text data. Regularization ( C=
+1.0)isappliedtobalancethemarginmaximizationandclassifica-
+tionerror.
+–Multi-output Strategy: To address the multi-label nature of
+Aspect-BasedSentimentAnalysis,whereonereviewcancontain
+multiple aspects, the system utilizes a MultiOutputClassifier
+wrapper. Thiswrapperencapsulatesthebaseestimatorandfits
+oneindependentclassifierforeachofthesixtargetaspects.
+–One-Vs-Rest (OvR) Mechanism: Within each aspect’s classi-
+fier, because each aspect has three possible sentiment classes,
+themodelemploysaOne-Vs-Reststrategy. Foreachaspect,the
+systemtrainsthreeseparatebinaryclassifiers(e.g., Positivevs.
+All others). During inference, the class with the highest confi-
+dencescorefromitsrespectivebinaryunitsisselectedasthefinal
+sentimentlabelforthatspecificaspect.
+–Implementation: Thepipelineisimplementedusingthescikit-
+learnlibrary,withTfidfVectorizerconfiguredforn-grams(1,2)to
+capturelocalwordcontextlike”khôngtốt”or”rấtsạch”.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline27
+Table12: HyperparameterconfigurationoftheTF-IDF+LinearSVM
+Hyperparameter Value
+FeatureExtractor TF-IDFVectorizer
+N-gramRange (1,2)
+Normalization L2norm
+MaxFeatures 50000
+Multi-labelStrategy MultiOutputClassifier
+BaseEstimator LinearSupportVectorMachine(LinearSVC)
+LossFunction SquaredHinge
+Penalty L2
+Regularization(C) 1.0
+Multi-classStrategy One-Vs-Rest(OvR)
+MaxIterations 1000
+RandomSeed 42ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline28
+10.3.Approach 2: ViDeBERTa + Adapter + Multi-
+Pooling+MSD
+This approach applies fine-tuning to the Vietnamese language model
+ViDeBERTa-base(Fsoft-AIC/videberta-base)formulti-aspectclassification.
+Toimprovecomputationalefficiencywhilepreservingtheabilitytolearn
+complexcontextualpatternsinhotelreviews,themodelincorporatesthe
+followingtechniques:
+•Efficient Fine-Tuning (PEFT): Insteadoffine-tuningtheentirear-
+chitecture,themodelemploysHoulsbybottleneckadapterswithabot-
+tleneckdimensionof64,insertedbeforetheLayerNormlayersinthe
+attentionandfeed-forwardblocks. Thebackboneisfrozenexceptfor
+theadapterlayers,theLayerNormparameters,andthelasttwoen-
+coderblocks.Thisdesignreducesthenumberoftrainableparameters
+to16.6million,or8.9%ofthetotalparameters,therebysubstantially
+loweringmemorycosts.
+•Multi-Pooling Strategy: To extract richer semantic features, the
+model does not rely solely on the traditional [CLS] token. Instead,
+thehiddenstatesareprocessedthroughamulti-poolingmechanism
+thatcombines[CLS],meanpooling,andmaxpooling,togetherwitha
+dedicatedmaskthatexcludesthe[CLS]and[SEP]tokens.
+•Multi-Sample Dropout (MSD): To improve generalization and
+reduceoverfitting,themulti-pooledrepresentationispassedthrough
+five dropout branches with different rates (0.05, 0.10, 0.15, 0.20,
+0.25). The final loss is computed as the average of the losses from
+thesebranches.
+•Training Procedure: The model uses weighted cross-entropy loss
+with label smoothing (0.1) to address class imbalance across the
+Positive, Negative, and Neutral/Not Mentioned labels. Training is
+performed with the AdamW optimizer under a discriminative fine-
+tuningstrategy,usingalearningrateof5e-5forthelasttwoencoder
+blocksand2e-4fortheadaptersandclassificationheads. Themodel
+istrainedwithamaximumsequencelengthof256andabatchsizeof
+32. Mixedprecisiontraining(AMP)isenabledontwoTeslaT4GPUs
+usingDataParallel,andtrainingrunsforupto20epochswithearly
+stoppingpatiencesetto3.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline29
+Table 13: Hyperparameter configuration of the fine-tuned ViDeBERTa
+model
+Hyperparameter Value
+Backbone ViDeBERTa-base(DeBERTa-v2)
+Adapterbottleneckdim 64
+Multi-pooling CLS+Mean+Max
+MSDdropoutrates {0.05,0.10,0.15,0.20,0.25}
+Optimizer AdamW
+Learningrate(adapters/heads) 2e-4
+Learningrate(encoderlayers) 5e-5
+Batchsize 32
+Maxsequencelength 256tokens
+Maxepochs 20
+Warmupradio 0.1
+Labelsmoothing 0.1
+Earlystoppingpatience 3epochs
+Gradientclipping maxnorm=1.0
+Randomseed 42ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline30
+10.4.Approach3: PhoBERT+BiGRU+MeanPooling+
+Multi-HeadClassification
+This method combines the contextual language representation power
+of PhoBERT (originally pre-trained as vinai/phobert-base-v2 ) with
+the sequential learning capabilities of a BiGRU. The model architecture
+(PhoBERT_MultiHeadGRU )consistsofthefollowingcomponents:
+•FeatureExtractor(Backbone): Themodelusesapre-trainedViet-
+nameselanguageencoder,PhoBERT,loadedfrom vinai/phobert-base-v2 .
+All parameters in the PhoBERT encoder are fine-tuned end-to-end
+duringtraining,ratherthanfreezingthebackbone. Theinputreview
+text is tokenized and truncated or padded to a maximum length of
+MAX_LEN=128tokens.
+•SequentialContextLayer(BiGRU): Thecontextualtokenrepresen-
+tationsproducedbyPhoBERT( last_hidden_state )arepassedintoa
+bidirectionalGRUwithhiddensize256. BecausetheGRUisbidirec-
+tional,itlearnsdependenciesfrombothleft-to-rightandright-to-left
+contexts,whichhelpsrefinethesentencerepresentationbeforeclas-
+sification.
+•PoolingStrategy(MaskedMeanPooling): AftertheBiGRUlayer,
+theoutputtokenrepresentationsareaggregatedintoasinglefixed-
+lengthvectorbymaskedmeanpooling.Thispoolingstrategyusesthe
+attention mask to exclude padding tokens, so only real tokens con-
+tributetothefinalsentencerepresentation.Thisismorereliablethan
+plain mean pooling because it prevents padding from affecting the
+representation.
+•ClassificationHeads: Thepooledsentencevectorisfedintosixin-
+dependentclassificationheads,oneforeachaspectlabel. Eachhead
+outputslogitsoverthreeclasses{0,1,2},andthemodelistrained
+using CrossEntropyLoss . During inference, the predicted class for
+eachaspectisobtainedbytakingthe argmaxoverthecorresponding
+headoutput.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline31
+Table14:Hyperparameterconfigurationofthefine-tunedPhoBERT-BiGRU
+multi-headclassifier
+Hyperparameter Value
+Backbone PhoBERT-base-v2
+Sequentiallayer BiGRU
+Poolingstrategy Maskedmeanpooling
+Classificationheads 6aspect-specificheads ×3classes
+Lossfunction CrossEntropyLoss
+Optimizer AdamW
+Learningrate 2×10−5
+Batchsize 16
+Maxsequencelength 128tokens
+Maxepochs 5
+GRUhiddendimension 256
+Gradientclipping maxnorm=1.0
+Randomseed 42
+Checkpointselectionmetric Validationmeanaspectmacro-F1
+Savedcheckpoint best_phobert_gru_ce.pthComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline32
+10.5.EvaluationMetrics
+Tocomprehensivelyevaluatemodelperformance,especiallyunderthese-
+vere class imbalance commonly found in real-world review datasets, the
+followingmetricsareused:
+•MacroF1-Score(PrimaryMetric): Thismetriciscomputedbyav-
+eraging the F1-scores of the three labels (0, 1, and 2) for each as-
+pectindependently,regardlessoftheirfrequenciesinthedataset. It
+providesafairerassessmentofmodelperformancebypreventingthe
+model from appearing strong simply because it favors the majority
+class(forexample, whenmostreviewsarelabeledasneutral). The
+scoresarealsoaggregatedintothemeanmacroF1acrossallsixas-
+pectstorepresentoverallperformance.
+•Accuracy: This metric measures the percentage of correctly pre-
+dictedsamplesoutofthetotalnumberofevaluatedsamplesforeach
+aspect.
+•ComputationalPerformanceMetrics: Theseincludetrainingtime
+perepochandinferencetimepersample, whichareusedtoassess
+thepracticalfeasibilityofreal-worlddeployment.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline33
+10.6.EvaluationResults
+10.6.1.Approach1: LinearSupportVectorMachine
+The evaluation results for the Linear SVM baseline model, using TF-IDF
+featuresandaMulti-Outputstrategy.Themodelwasevaluatedonthesame
+testsetof1,889samplestoensureafaircomparisonwiththedeeplearning
+approach.
+Table15: Aspect-levelperformanceoftheLinearSupportVectorMachine
+modelonthetestset
+Aspect MacroF1 Accuracy
+Hygiene 0.8853 0.9449
+Food 0.8223 0.9539
+Hotel 0.7035 0.7941
+Location 0.8178 0.9423
+Room 0.8631 0.8957
+Service 0.8654 0.9412
+•OverallPerformance: Themodelachievesaaveragemacro-F1score
+of0.8263andaaverageAccuracyof0.912acrossallsixaspects.
+•ComputationalCost: Thetrainingprocessforallsixaspectsishighly
+efficient,takingapproximately1to3minutestocompleteonalocal
+CPU.
+10.6.2.Approach2: ViDeBERTa+Adapter+Multi-Pooling+MSD
+Figure 7: Training/validation loss and validation macro-F1 for the fine-
+tunedViDeBERTamodelComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline34
+Note:Duringtraining,themodelisoptimizedusingclass-weightedcross-
+entropylosswithlabelsmoothingtoaddressclassimbalanceandreduce
+overfitting. Incontrast, duringvalidation, standardcross-entropylossis
+usedtomeasureperformancemoreobjectively.
+Thefollowingtablepresentstheevaluationresultsofthefine-tunedViDe-
+BERTamodelonthetestset(1889samples),aftertrainingstoppedearly
+atepoch19,withepoch16identifiedasthebest-performingepoch.
+Table16:Aspect-levelperformanceofthefine-tunedViDeBERTamodelon
+thetestset
+Aspect MacroF1 Accuracy
+Hygiene 0.8500 0.9269
+Food 0.8595 0.9576
+Hotel 0.6924 0.7983
+Location 0.7889 0.9344
+Room 0.8578 0.8925
+Service 0.8420 0.9328
+•OverallPerformance: Themodelachievesaaveragemacro-F1score
+of0.8151andaaverageAccuracyof0.907acrossallsixaspects.
+•ComputationalCost: Trainingtakesapproximately3.1minutesper
+epoch(equivalenttoabout188seconds)onasystemwithtwoTeslaT4
+GPUs. Duringinference,themodelrequiresapproximately20.10ms
+persample.Includingvalidationaftereachepoch,thetotalwall-clock
+trainingtimewasabout74min26s
+10.6.3.Approach 3: PhoBERT + BiGRU + Mean Pooling + Multi-
+HeadClassification
+Table17reportstheevaluationresultsofthefine-tunedPhoBERT+BiGRU
+6-headmodelontheheld-outtestsetcontaining1,889samples.Themodel
+wastrainedfor5epochs,andthebestcheckpointwasselectedatepoch4
+basedonthevalidationmean-aspectF1score.
+Training Dynamics: During training, the loss decreased steadily from
+0.3774inepoch1to0.0889inepoch5. Validationperformanceimproved
+uptoepoch4,wherethemodelachieveditsbestvalidationresultwitha
+mean-aspectF1of0.8933andavalidationlossof0.1763. Afterepoch4,
+validation performance slightly declined in epoch 5, suggesting that theComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline35
+Table17: TestperformanceofthePhoBERT+BiGRU6-headmodel
+Aspect Accuracy Macro-F1
+Hygiene 0.9502 0.9155
+Food&Beverage 0.9698 0.8985
+Hotel 0.8857 0.8213
+Location 0.9555 0.8667
+Room 0.9481 0.9346
+Service 0.9603 0.9092
+checkpointfromepoch4wasthemosteffectiveone.
+Training Time: Thetrainingtimeperepochwasapproximately3.9–4.3
+minutes,withepochtimesof3min54s,4min17s,4min11s,4min15
+s, and4min07s, respectively. Thetotaltrainingtimefor5epochswas
+approximately20min44s.Includingvalidationaftereachepoch,thetotal
+wall-clocktrainingtimewasabout22min36s.
+OverallPerformance: Themodelachievedanoverallaccuracyof0.9449,
+atestmacro-F1scoreof0.9101,amean-aspectmacro-F1scoreof0.8910,
+andanexact-matchratioof0.7454onthetestset. Theseresultsindicate
+thatthemodelperformswellattheindividuallabellevel,whilefull-label
+exactpredictionacrossallsixaspectsremainsmorechallenging.
+AdditionalObservations:
+•The Roomaspect achieved the highest performance on the test set,
+withamacro-F1scoreof0.9346.
+•The Hotelaspect was the most difficult to predict, with a macro-F1
+scoreof0.8213,indicatinggreaterambiguitycomparedtotheother
+aspects.
+•Theexact-matchratioof0.7454meansthatapproximately74.54%of
+thetestsampleswerepredictedcorrectlyacrossallsixaspectssimul-
+taneously.
+•Inferenceonthetestsettookapproximately11secondsfor1,889sam-
+ples,correspondingtoabout5.8mspersample.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline36
+10.7.Discussion
+10.7.1.Approach1: LinearSupportVectorMachine
+TheLinearSVM-basedapproachwithTF-IDFfeaturesandamulti-output
+strategyperformseffectivelyasabaselineontheABSAtaskinthehotel
+domain,asreflectedbyaaveragemacro-F1scoreof0.8263.
+•Strengths:
+–ComputationalEfficiency: LinearSVMisextremelyfasttotrain
+and requires minimal memory compared to Transformer-based
+models.
+–Interpretability: Themodelweightsforeachaspectcanbeeas-
+ilyinspectedtoidentifywhichkeywords(e.g.,”wifi”,”bẩn”,”nhiệt
+tình”)contributemosttoaspecificsentimentprediction
+–NoOverfittingonSmallData: Duetoitshighbiasandsimple
+structure,themodelisrobustagainstnoiseinsmallerdatasetsor
+aspectswithveryfewsamples.
+•Weeknesses:
+–LackofSemanticContext: TF-IDFtreatswordsasindependent
+units, failing to understand complex Vietnamese grammar, sar-
+casm,orlong-rangedependenciesthatmodelslikeViDeBERTaor
+PhoBERTcancapture.
+–Limited Generalization: The model relies heavily on exact
+word matches, making it less effective at handling spelling
+variations or slang that were not explicitly covered in the
+preprocessing/dictionarynormalizationstage.
+10.7.2.Approach2: ViDeBERTa+Adapter+Multi-Pooling+MSD
+The ViDeBERTa-based approach with adapters and MSD performs effec-
+tivelyontheABSAtaskinthetourismdomain,asreflectedbyaaverage
+macro-F1scoreof0.8151.
+•Strengths:
+–Featureextractioncapability: Clearlydefinedphysicalaspects
+such as Food, Room, and Hygiene achieve very high F1 scores
+(>0.85). Themulti-poolingmechanismhelpsthemodelcapture
+shortsentiment-bearingspansthatmaybedistributedacrossthe
+reviewandcouldbeoverlookedwhenrelyingsolelyonthe[CLS]ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline37
+token.
+–Deploymentfeasibility: Owingtotheadaptermechanism,the
+numberoftrainableparametersisreducedtofewerthan17mil-
+lion, enabling efficient mixed-precision training in only about 3
+minutesperepoch. Theinferencespeedof20.10mspersample
+isalsohighlypractical,supportingnear-real-timeresponsiveness
+inreal-worldapplications.
+–Robustness: Multi-SampleDropout(MSD)helpsthemodelmit-
+igate overfitting effectively. This is reflected in the steady de-
+creaseandstableconvergenceofthevalidationlossbeforeearly
+stoppingistriggered.
+•Weaknessesandobservations:
+–The anomalous behavior of the “Hotel” aspect: The Hotel
+aspectrecordsthelowestmacroF1(0.6924)andthelowestac-
+curacy(0.7983).
+–Subtle class imbalance: TheLocationaspectshowsveryhigh
+accuracy(0.9344)butalowermacroF1of0.7889.Thissuggestsa
+heavilyskewedlabeldistribution:reviewersusuallyeitherpraise
+thelocationordonotmentionit,whilenegativecommentsabout
+locationarerelativelyrare. Althoughclassweightsareused,the
+scarcityofnegativesamplesfortheLocationaspectremainsan
+empiricalchallenge.
+10.7.3.Approach 3: PhoBERT + BiGRU + Mean Pooling + Multi-
+HeadClassification
+The PhoBERT-based model with a BiGRU layer and six aspect-specific
+classificationheadsperformsstronglyonthetourism-domainABSAtask,
+achieving a mean macro-F1 score of 0.8910 on the test set. The best
+checkpointisobtainedatepoch4,withavalidationmean-aspectmacro-F1
+of0.8933.
+•Strengths:
+–Strong contextual modeling: PhoBERT provides rich Viet-
+namesecontextualrepresentations,whiletheBiGRUlayerhelps
+preserve token order and capture sentiment transitions that
+may occur away from the [CLS]token. This combination leads
+to strong overall performance, including 0.9449 accuracy and
+0.7454exact-matchonthetestset.
+–Aspect-aware prediction: The six parallel heads allow theComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline38
+model to learn separate decision boundaries for vệ sinh,đồ ăn
+thức uống,khách sạn,vị trí,phòng ốc,and dịch vụ. Inpractice,this
+design yields particularly high scores for phòng ốc(macro-F1
+0.9346), vệ sinh(0.9155),and dịch vụ(0.9092).
+–Stableoptimization: Themodelisstraightforwardtotrainwith
+AdamW,cross-entropyloss,andgradientclipping. Therelatively
+lowvalidationlossatthebestcheckpoint(0.1763)suggeststhat
+thetrainingprocessconvergescleanlybeforeoverfittingbecomes
+severe.
+•Weaknessesandobservations:
+–Semanticambiguityinthe khách sạnaspect:Thisaspectob-
+tains the lowest macro-F1 (0.8213). A plausible explanation is
+thatgeneralcommentsaboutthehotelareoftenmixedwithopin-
+ionsaboutroomquality,service,orlocation,makingtheboundary
+betweenaspectslessclear.
+–Location remains relatively uneven: Although vị tríachieves
+highaccuracy(0.9555),itsmacro-F1islowerat0.8667.Thispat-
+terntypicallyindicatesaskewedlabeldistribution,wherepositive
+orneutralmentionsaremuchmorefrequentthannegativeones.
+–Full-instance prediction is still challenging: The exact-
+matchratiois0.7454,whichmeansthatpredictingallsixaspects
+correctly in a single review remains difficult even when the
+per-aspectscoresarestrong.
+–Heavier than parameter-efficient alternatives: Becausethe
+entire PhoBERT backbone is fine-tuned, this approach is more
+computationallydemandingthanadapter-basedmethodsandmay
+belesslightweightfordeployment.
+10.8.OverallDiscussionandInsights
+Theresultsprovideseveralimportantinsightsintothetrade-offsbetween
+performance,efficiency,andmodelingcapability.
+Performance vs. Complexity Trade-off A key observation is that in-
+creased model complexity does not necessarily guarantee better perfor-
+mance. Despite being the simplest approach, the Linear SVM baseline
+achievesamacro-F1scoreof0.8263,outperformingthemoresophisticated
+ViDeBERTa-basedmodel(0.8151). Thissuggeststhat, forstructureddo-
+mainssuchashotelreviews—wheresentimentisoftenexpressedthroughComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline39
+explicitkeywords—lexicalfeatureslikeTF-IDFremainhighlycompetitive.
+Incontrast,thePhoBERT+BiGRUmodelclearlyoutperformsbothalterna-
+tives,achievingthehighestmacro-F1scoreof0.8910andastrongexact-
+match ratio of 0.7454. This indicates that when sufficient modeling ca-
+pacityiscombinedwithanappropriatearchitecturaldesign,deeplearning
+approachescansignificantlyimprovefine-grainedsentimentclassification.
+TheRoleofContextualRepresentation Thecomparativeresultshigh-
+lighttheimportanceofcontextualunderstandinginABSA.TheSVMmodel
+relies solely on surface-level lexical features, making it effective for ex-
+plicit sentiment cues but incapable of capturing deeper semantics. The
+ViDeBERTamodelintroducescontextualembeddings;however,itsreliance
+onparameter-efficientfine-tuning(PEFT)limitsitsadaptabilitytodomain-
+specificpatterns.
+Incontrast,thePhoBERT-basedmodel,whichfullyfine-tunesthebackbone
+andincorporatesaBiGRUlayer, achievesabetterbalancebetweencon-
+textualrepresentationandsequentialmodeling. Thisallowsthemodelto
+capture long-range dependencies and subtle sentiment transitions more
+effectively.
+Thesefindingssuggestthatcontextualrepresentationaloneisinsufficient;
+thewaycontextualfeaturesarefurtherprocessed(e.g.,throughsequence
+modelssuchasBiGRUorspecializedclassificationheads)playsacritical
+roleindownstreamperformance.
+Aspect-Level Challenges and Data Characteristics Across all ap-
+proaches, certain aspects consistently exhibit lower performance, par-
+ticularly the Hotelaspect. This reflects inherent challenges related to
+data characteristics rather than model limitations. The Hotelaspect is
+semantically broad and often overlaps with other aspects (e.g., room,
+service),leadingtolabelambiguity.
+Similarly, the Locationaspect demonstrates class imbalance, where posi-
+tiveorneutrallabelsdominate. Thisresultsinhighaccuracybutcompar-
+atively lower macro-F1 scores. These patterns suggest that data-centric
+improvements—such as refined annotation guidelines, better aspect dis-
+ambiguation, or data augmentation—are crucial for further performance
+gains.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline40
+Multi-Aspect Learning and Prediction Difficulty Anotherimportant
+findingisthegapbetweenper-aspectperformanceandfull-instancepre-
+diction. AlthoughthePhoBERT+BiGRUmodelachieveshighmacro-F1
+scores at the individual aspect level, the exact-match ratio remains at
+0.7454. This indicates that predicting all six aspects correctly within a
+singlereviewremainsachallengingtask.
+Thisreflectstheinherentdifficultyofmulti-outputlearning,whereaner-
+rorinanysingleaspectleadstofailureinexact-matchevaluation. Future
+workmayexploreadvancedstrategiessuchasmodelingdependenciesbe-
+tweenaspects,hierarchicalorjointlearningframeworks,andcalibration
+techniquestoimprovepredictionconsistency.
+Efficiency and Practical Deployment From a practical perspec-
+tive, each approach occupies a different position along the efficiency–
+performance spectrum. The Linear SVM model is highly efficient and
+interpretable,makingitsuitableforlightweightapplicationsorrapidpro-
+totyping.TheViDeBERTamodelwithadaptersprovidesabalancebetween
+efficiencyandcontextualmodeling,offeringreasonableperformancewith
+reducedcomputationalcost.
+Incontrast,thePhoBERT+BiGRUmodeldeliversthebestpredictiveper-
+formancebutatahighercomputationalcost,makingitmoreappropriate
+forproductionenvironmentswhereaccuracyistheprimaryconcern.These
+findingshighlightthatmodelselectionshouldbeguidedbyapplicationcon-
+straintsratherthanperformancealone.
+KeyTakeaways
+•TraditionalmethodssuchasSVMremainstrongbaselinesforstruc-
+turedsentimentanalysistasks.
+•Parameter-efficientfine-tuningdoesnotalwaysyieldoptimalperfor-
+mancewhenmodeladaptabilityisconstrained.
+•Combining contextual embeddings with sequential modeling
+(PhoBERT+BiGRU)ishighlyeffectiveforABSA.
+•Datacharacteristics,includingambiguityandclassimbalance,signif-
+icantlyimpactmodelperformance.
+•Multi-aspectpredictionremainsinherentlychallengingdespitestrong
+per-aspectresults.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline41
+11.Application
+Thissectionisreservedfortheapplicationstage,wheretheprojectoutput
+isconnectedtopracticalusagescenarios.
+11.1.ApplicationObjectives
+Thissubsectionshouldexplainthepurposeoftheapplicationlayerandthe
+userorbusinessproblemitaddresses.
+11.2.SystemWorkflow
+Thissubsectioncandescribehowthemodeloutputisintegratedintoan
+applicationworkflow,dashboard,ordecision-supportpipeline.
+11.3.PotentialUseCases
+Thissubsectioncanpresentpracticalusecases,suchasservicemonitoring,
+reviewsummarization,sentiment-basedrecommendations,oroperational
+alerts.
+11.4.LimitationsinDeployment
+This subsection should discuss practical limitations, such as latency, do-
+mainshift,modeldrift,orinterpretabilityconcerns.
+11.5.FutureApplicationDirections
+Thissubsectioncanoutlinepossibleimprovementsorextensionsforreal-
+worlddeployment.ComprehensiveReportontheAspect-BasedSentimentAnalysisPipeline42
+12.References
+References
+[1]https://arxiv.org/pdf/1706.03762
+[2]https://arxiv.org/pdf/2006.03654
+[3]https://arxiv.org/pdf/2111.09543
+[4]https://arxiv.org/pdf/2301.10439
+[5]https://huggingface.co/Fsoft-AIC/videberta-base
+[6]https://arxiv.org/pdf/1902.00751
+[7]https://arxiv.org/pdf/1905.09788

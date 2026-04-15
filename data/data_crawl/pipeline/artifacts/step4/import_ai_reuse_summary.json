@@ -10,6 +10,7 @@
   ],
   "notes": [
     "conf_mean and conf_min are dropped before import",
-    "reviews are preprocessed with thuan_hoa_vs + VietnameseTextPreprocessor.process_batch(correct_errors=True)"
+    "reviews are preprocessed with thuan_hoa_vs + VietnameseTextPreprocessor.process_batch(correct_errors=True)",
+    "hotel address is imported from hotels CSV (fallback: Chưa cập nhật)"
   ]
 }

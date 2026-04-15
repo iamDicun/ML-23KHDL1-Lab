@@ -3,6 +3,7 @@ import HomePage from './pages/HomePage'
 import IntroductionPage from './pages/IntroductionPage'
 import CitizenLoginPage from './pages/CitizenLoginPage'
 import OfficialDashboardPage from './pages/OfficialDashboardPage'
+import OfficialAiStatisticsPage from './pages/OfficialAiStatisticsPage'
 import OfficialRequestDetailPlaceholderPage from './pages/OfficialRequestDetailPlaceholderPage'
 import StatisticsPage from './pages/StatisticsPage'
 import EvaluationPage from './pages/EvaluationPage'
@@ -31,6 +32,7 @@ function App() {
         <Route path="/phan-anh-kien-nghi/tra-cuu" element={<PetitionLookupPage />} />
         <Route path="/dang-nhap/cong-dan" element={<CitizenLoginPage />} />
         <Route path="/can-bo/quan-ly" element={<OfficialDashboardPage />} />
+        <Route path="/can-bo/thong-ke-ai" element={<OfficialAiStatisticsPage />} />
         <Route path="/can-bo/ho-so/:requestId" element={<OfficialRequestDetailPlaceholderPage />} />
       </Routes>
     </Router>

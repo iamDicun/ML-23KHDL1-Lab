@@ -159,6 +159,7 @@ Các endpoint dưới đây dùng để chạy pipeline preprocess + import dữ
 
 Lưu ý:
 - Cần chạy migration `sql/migration_20260415_ai_reuse_filtered_hotels_reviews.sql` trước khi import.
+- Chạy thêm `sql/migration_20260415_ai_reuse_hotels_add_address.sql` để lưu địa chỉ cho `ai_reuse_hotels`.
 - Nếu muốn dọn hẳn phần schema business cũ và chỉ giữ hotel/review thực tế, chạy thêm `sql/migration_20260416_hotel_only_cleanup.sql`.
 - Script backend sẽ gọi file Python: `data/data_crawl/pipeline/scripts/step6_preprocess_and_import_filtered_hotels_reviews.py`.
 

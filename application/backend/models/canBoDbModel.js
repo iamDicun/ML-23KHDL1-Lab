@@ -46,7 +46,7 @@ export const CanBoDbModel = {
          h.id,
          h.source_hotel_id,
          h.hotel_name AS name,
-         NULL::TEXT AS address,
+         COALESCE(NULLIF(BTRIM(h.address), ''), 'Chưa cập nhật') AS address,
          NULL::TEXT AS district,
          'TP. Ho Chi Minh'::TEXT AS province_city,
          'active'::TEXT AS status,
@@ -70,7 +70,7 @@ export const CanBoDbModel = {
          h.id,
          h.source_hotel_id,
          h.hotel_name AS name,
-         NULL::TEXT AS address,
+         COALESCE(NULLIF(BTRIM(h.address), ''), 'Chưa cập nhật') AS address,
          NULL::TEXT AS district,
          'TP. Ho Chi Minh'::TEXT AS province_city,
          'active'::TEXT AS status,
@@ -100,14 +100,16 @@ export const CanBoDbModel = {
     // Dùng source_hotel_id âm (âm của registrationRequestId) để tránh xung đột với dữ liệu hotel AI thực
     const sourceId = -(registrationRequestId)
     const displayName = String(hotelName || 'Cơ sở kinh doanh')
+    const displayAddress = String(address || '').trim() || 'Chưa cập nhật'
     const result = await query(
-      `INSERT INTO ai_reuse_hotels (source_hotel_id, hotel_name)
-       VALUES ($1, $2)
+      `INSERT INTO ai_reuse_hotels (source_hotel_id, hotel_name, address)
+       VALUES ($1, $2, $3)
        ON CONFLICT (source_hotel_id) DO UPDATE SET
          hotel_name = EXCLUDED.hotel_name,
+         address = EXCLUDED.address,
          updated_at = NOW()
        RETURNING id`,
-      [sourceId, displayName]
+      [sourceId, displayName, displayAddress]
     )
     return result.rows[0] || null
   },
@@ -349,6 +351,84 @@ export const CanBoDbModel = {
     return result.rows
   },
 
+  findHotelsWithLatestAiSummary: async (limit = 5000) => {
+    const resolvedLimit = normalizeLimit(limit, 5000, 10000)
+
+    try {
+      const result = await query(
+        `SELECT
+           h.id,
+           h.source_hotel_id,
+           h.hotel_name AS name,
+           COALESCE(NULLIF(BTRIM(h.address), ''), 'Chưa cập nhật') AS address,
+           p.hygiene_score,
+           p.food_score,
+           p.hotel_score,
+           p.location_score,
+           p.room_score,
+           p.service_score,
+           p.sentiment_label,
+           p.last_evaluated_at,
+           insight.attribute_affected,
+           insight.top_negative_keywords,
+           insight.representative_reviews,
+           insight.generated_at AS insight_generated_at
+         FROM ai_reuse_hotels h
+         LEFT JOIN hotel_ai_predictions p ON p.hotel_id = h.id
+         LEFT JOIN LATERAL (
+           SELECT
+             hs.attribute_affected,
+             hs.top_negative_keywords,
+             hs.representative_reviews,
+             hs.generated_at
+           FROM hotel_insights_summary hs
+           WHERE hs.hotel_id = h.id
+           ORDER BY hs.generated_at DESC, hs.id DESC
+           LIMIT 1
+         ) insight ON TRUE
+         ORDER BY p.last_evaluated_at DESC NULLS LAST, h.updated_at DESC, h.id DESC
+         LIMIT $1`,
+        [resolvedLimit]
+      )
+
+      return result.rows
+    } catch (err) {
+      if (!isMissingTableError(err)) {
+        throw err
+      }
+
+      if (String(err.table || '').trim().toLowerCase() === 'ai_reuse_hotels') {
+        throw err
+      }
+
+      const fallback = await safeQueryWhenTableOptional(
+        `SELECT
+           h.id,
+           h.source_hotel_id,
+           h.hotel_name AS name,
+           COALESCE(NULLIF(BTRIM(h.address), ''), 'Chưa cập nhật') AS address,
+           NULL::DOUBLE PRECISION AS hygiene_score,
+           NULL::DOUBLE PRECISION AS food_score,
+           NULL::DOUBLE PRECISION AS hotel_score,
+           NULL::DOUBLE PRECISION AS location_score,
+           NULL::DOUBLE PRECISION AS room_score,
+           NULL::DOUBLE PRECISION AS service_score,
+           NULL::VARCHAR(20) AS sentiment_label,
+           NULL::TIMESTAMPTZ AS last_evaluated_at,
+           NULL::TEXT AS attribute_affected,
+           ARRAY[]::TEXT[] AS top_negative_keywords,
+           NULL::TEXT AS representative_reviews,
+           NULL::TIMESTAMPTZ AS insight_generated_at
+         FROM ai_reuse_hotels h
+         ORDER BY h.updated_at DESC, h.id DESC
+         LIMIT $1`,
+        [resolvedLimit]
+      )
+
+      return fallback.rows
+    }
+  },
+
   upsertHotelAiPrediction: async ({
     hotelId,
     hygieneScore,
@@ -404,11 +484,18 @@ export const CanBoDbModel = {
     const inserted = []
 
     for (const entry of entries) {
+      const scoreType = String(entry?.scoreType || '').trim()
+      const scoreValue = Number(entry?.scoreValue)
+
+      if (!scoreType || !Number.isFinite(scoreValue)) {
+        continue
+      }
+
       const result = await query(
         `INSERT INTO hotel_ai_score_history (hotel_id, score_type, score_value, evaluated_at)
          VALUES ($1, $2, $3, NOW())
          RETURNING id, hotel_id, score_type, score_value, evaluated_at`,
-        [Number(hotelId), entry.scoreType, entry.scoreValue]
+        [Number(hotelId), scoreType, scoreValue]
       )
 
       if (result.rows[0]) inserted.push(result.rows[0])

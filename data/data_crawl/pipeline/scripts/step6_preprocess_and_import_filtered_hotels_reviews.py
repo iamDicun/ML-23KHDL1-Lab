@@ -46,6 +46,7 @@ SUMMARY_OUT = STEP4_DIR / "import_ai_reuse_summary.json"
 REQUIRED_HOTEL_COLUMNS = [
     "hotel_id",
     "hotel_name",
+    "address",
     "total_reviews_in_output_results",
     "removed_reviews_in_step2",
     "kept_reviews_in_step2",
@@ -176,7 +177,11 @@ def _prepare_hotels(hotels_df: pd.DataFrame) -> pd.DataFrame:
     ]:
         hotels[col] = pd.to_numeric(hotels[col], errors="coerce").fillna(0).astype("int64")
 
-    hotels["hotel_name"] = hotels["hotel_name"].fillna("Unknown hotel").astype(str)
+    hotels["hotel_name"] = hotels["hotel_name"].fillna("Unknown hotel").astype(str).str.strip()
+    hotels.loc[hotels["hotel_name"] == "", "hotel_name"] = "Unknown hotel"
+
+    hotels["address"] = hotels["address"].fillna("").astype(str).str.strip()
+    hotels.loc[hotels["address"] == "", "address"] = "Chưa cập nhật"
 
     bad_rows = hotels[hotels["kept_reviews_in_step2"] != 0]
     if not bad_rows.empty:
@@ -241,13 +246,15 @@ def _upsert_hotels(cur, hotels: pd.DataFrame) -> None:
         INSERT INTO ai_reuse_hotels (
             source_hotel_id,
             hotel_name,
+            address,
             total_reviews_in_output_results,
             removed_reviews_in_step2,
             kept_reviews_in_step2
         )
-        VALUES (%s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (source_hotel_id) DO UPDATE SET
             hotel_name = EXCLUDED.hotel_name,
+            address = EXCLUDED.address,
             total_reviews_in_output_results = EXCLUDED.total_reviews_in_output_results,
             removed_reviews_in_step2 = EXCLUDED.removed_reviews_in_step2,
             kept_reviews_in_step2 = EXCLUDED.kept_reviews_in_step2,
@@ -258,6 +265,7 @@ def _upsert_hotels(cur, hotels: pd.DataFrame) -> None:
         (
             int(row.hotel_id),
             str(row.hotel_name),
+            str(row.address),
             int(row.total_reviews_in_output_results),
             int(row.removed_reviews_in_step2),
             int(row.kept_reviews_in_step2),
@@ -338,6 +346,7 @@ def main() -> None:
         "notes": [
             "conf_mean and conf_min are dropped before import",
             "reviews are preprocessed with thuan_hoa_vs + VietnameseTextPreprocessor.process_batch(correct_errors=True)",
+            "hotel address is imported from hotels CSV (fallback: Chưa cập nhật)",
         ],
     }
 

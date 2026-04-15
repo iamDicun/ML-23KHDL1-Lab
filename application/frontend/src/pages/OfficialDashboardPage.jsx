@@ -104,16 +104,29 @@ const AI_COMPONENT_META = {
   service: { label: 'Dịch vụ' }
 }
 
-const clampAiScore = (value) => {
+const toAiScoreOrNull = (value) => {
   const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return 0
+  if (!Number.isFinite(parsed)) return null
   return Math.max(0, Math.min(1, parsed))
+}
+
+const clampAiScore = (value) => {
+  const parsed = toAiScoreOrNull(value)
+  return parsed === null ? 0 : parsed
 }
 
 const formatAiPercent = (value) => `${Math.round(clampAiScore(value) * 100)}%`
 
 const getAiScoreMeta = (value) => {
-  const score = clampAiScore(value)
+  const score = toAiScoreOrNull(value)
+
+  if (score === null) {
+    return {
+      label: 'Chưa phân tích',
+      tone: 'text-gray-700 bg-gray-50 border-gray-200',
+      bar: 'bg-gray-400'
+    }
+  }
 
   if (score < 0.45) {
     return {
@@ -123,7 +136,7 @@ const getAiScoreMeta = (value) => {
     }
   }
 
-  if (score < 0.65) {
+  if (score < 0.5) {
     return {
       label: 'Cần theo dõi',
       tone: 'text-amber-700 bg-amber-50 border-amber-200',
@@ -402,7 +415,7 @@ export default function OfficialDashboardPage() {
   const aiModalComponentEntries = Object.entries(AI_COMPONENT_META).map(([key, meta]) => ({
     key,
     label: meta.label,
-    score: aiModalResult?.diemThanhPhan?.[key] ?? 0
+    score: aiModalResult?.diemThanhPhan?.[key] ?? null
   }))
   const aiModalKeywords = Array.isArray(aiModalResult?.insight?.topTuKhoaTieuCuc)
     ? aiModalResult.insight.topTuKhoaTieuCuc
