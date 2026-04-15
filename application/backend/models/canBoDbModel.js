@@ -98,19 +98,74 @@ export const CanBoDbModel = {
   // Tạo/cập nhật bản ghi cơ sở từ hồ sơ đã được phê duyệt
   upsertApprovedBusiness: async ({ registrationRequestId, hotelName, address, province }) => {
     // Dùng source_hotel_id âm (âm của registrationRequestId) để tránh xung đột với dữ liệu hotel AI thực
-    const sourceId = -(registrationRequestId)
+    const sourceId = -Number(registrationRequestId)
+    if (!Number.isInteger(sourceId) || sourceId >= 0) {
+      const err = new Error('registrationRequestId không hợp lệ để đồng bộ cơ sở')
+      err.statusCode = 400
+      throw err
+    }
+
     const displayName = String(hotelName || 'Cơ sở kinh doanh')
     const displayAddress = String(address || '').trim() || 'Chưa cập nhật'
-    const result = await query(
-      `INSERT INTO ai_reuse_hotels (source_hotel_id, hotel_name, address)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (source_hotel_id) DO UPDATE SET
-         hotel_name = EXCLUDED.hotel_name,
-         address = EXCLUDED.address,
-         updated_at = NOW()
-       RETURNING id`,
-      [sourceId, displayName, displayAddress]
+
+    const columnsResult = await query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'ai_reuse_hotels'`
     )
+
+    const columnSet = new Set(columnsResult.rows.map((row) => String(row.column_name || '').trim()))
+    if (!columnSet.has('source_hotel_id') || !columnSet.has('hotel_name')) {
+      const err = new Error('Bảng ai_reuse_hotels chưa đúng schema (thiếu source_hotel_id hoặc hotel_name)')
+      err.statusCode = 500
+      throw err
+    }
+
+    const insertColumns = ['source_hotel_id', 'hotel_name']
+    const insertValues = [sourceId, displayName]
+    const updateClauses = ['hotel_name = EXCLUDED.hotel_name']
+
+    if (columnSet.has('address')) {
+      insertColumns.push('address')
+      insertValues.push(displayAddress)
+      updateClauses.push('address = EXCLUDED.address')
+    }
+
+    // Với schema hiện tại, các cột đếm này thường là NOT NULL + CHECK.
+    // Nếu tồn tại, luôn insert giá trị 0 để tránh lỗi và giữ dữ liệu nhất quán.
+    if (columnSet.has('total_reviews_in_output_results')) {
+      insertColumns.push('total_reviews_in_output_results')
+      insertValues.push(0)
+      updateClauses.push('total_reviews_in_output_results = EXCLUDED.total_reviews_in_output_results')
+    }
+
+    if (columnSet.has('removed_reviews_in_step2')) {
+      insertColumns.push('removed_reviews_in_step2')
+      insertValues.push(0)
+      updateClauses.push('removed_reviews_in_step2 = EXCLUDED.removed_reviews_in_step2')
+    }
+
+    if (columnSet.has('kept_reviews_in_step2')) {
+      insertColumns.push('kept_reviews_in_step2')
+      insertValues.push(0)
+      updateClauses.push('kept_reviews_in_step2 = EXCLUDED.kept_reviews_in_step2')
+    }
+
+    if (columnSet.has('updated_at')) {
+      updateClauses.push('updated_at = NOW()')
+    }
+
+    const placeholders = insertValues.map((_, index) => `$${index + 1}`).join(', ')
+
+    const result = await query(
+      `INSERT INTO ai_reuse_hotels (${insertColumns.join(', ')})
+       VALUES (${placeholders})
+       ON CONFLICT (source_hotel_id) DO UPDATE SET
+         ${updateClauses.join(', ')}
+       RETURNING id`,
+      insertValues
+    )
+
     return result.rows[0] || null
   },
 

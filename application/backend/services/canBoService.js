@@ -1348,6 +1348,8 @@ export const CanBoService = {
       const err = new Error('Không tìm thấy hồ sơ'); err.statusCode = 404; throw err
     }
 
+    let canhBaoDongBoCoSo = null
+
     // --- Tự động tạo bản ghi cơ sở kinh doanh khi hồ sơ được phê duyệt ---
     if (normalizedStatus === 'approved') {
       try {
@@ -1376,13 +1378,16 @@ export const CanBoService = {
           province
         })
       } catch (businessErr) {
-        // Không throw — việc tạo cơ sở thất bại không nên rollback việc cập nhật trạng thái
-        console.error('[xuLyHoSo] Failed to auto-create business record:', businessErr?.message)
+        // Không throw — việc tạo cơ sở thất bại không nên rollback việc cập nhật trạng thái.
+        // Trả cảnh báo để UI/API caller biết có sự cố đồng bộ dữ liệu.
+        canhBaoDongBoCoSo = `Không đồng bộ được cơ sở kinh doanh: ${businessErr?.message || 'Lỗi không xác định'}`
+        console.error('[xuLyHoSo] Failed to auto-create business record:', businessErr)
       }
     }
 
     return {
       message: 'Cập nhật trạng thái hồ sơ thành công',
+      canhBaoDongBoCoSo,
       hoSo: mapRequestRow(hoSo)
     }
   },
