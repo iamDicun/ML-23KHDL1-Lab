@@ -105,6 +105,67 @@ const round = (value, digits = 4) => {
 
 const normalizeModelInputText = (value) => String(value || '').trim().replace(/\s+/g, ' ')
 
+// Các ký tự tiếng Việt hợp lệ (giống VN_CHARS trong Python training pipeline)
+const VN_CHARS = 'áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệóòỏõọôốồổỗộơớờởỡợíìỉĩịúùủũụưứừửữựýỳỷỹỵđÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÍÌỈĨỊÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ'
+
+/**
+ * Tiền xử lý văn bản matching đúng pipeline Python training:
+ * lowercase → remove_html → remove_emoji → remove_url → remove_email
+ * → remove_hashtags → remove_unnecessary_characters → normalize_whitespace
+ *
+ * NOTE: word_segment (VnCoreNLP) được mô phỏng thủ công bằng COMPOUND_WORDS bên dưới.
+ */
+const isEmojiCodepoint = (cp) => {
+  if (cp === undefined) return false
+  // Emoticons, Misc Pictographs, Supplemental Symbols, Transport (U+1F300–U+1FAFF)
+  if (cp >= 0x1F300 && cp <= 0x1FAFF) return true
+  // Misc Symbols and Dingbats (U+2600–U+27BF)
+  if (cp >= 0x2600 && cp <= 0x27BF) return true
+  // Enclosed Alphanumeric Supplement, flags (U+1F100–U+1F2FF)
+  if (cp >= 0x1F100 && cp <= 0x1F2FF) return true
+  // Variation Selectors (U+FE00–U+FEFF)
+  if (cp >= 0xFE00 && cp <= 0xFEFF) return true
+  // Supplemental Arrows, Misc Symbols (U+2B00–U+2BFF)
+  if (cp >= 0x2B00 && cp <= 0x2BFF) return true
+  // Common single-char emoji: copyright, registered, etc.
+  if (cp === 0x00A9 || cp === 0x00AE || cp === 0x203C || cp === 0x2049) return true
+  return false
+}
+
+const removeEmojiFromText = (text) =>
+  Array.from(text)
+    .map((char) => (isEmojiCodepoint(char.codePointAt(0)) ? ' ' : char))
+    .join('')
+
+/**
+ * Tiền xử lý văn bản matching đúng pipeline Python training:
+ * lowercase → remove_html → remove_emoji → remove_url → remove_email
+ * → remove_hashtags → (remove_unnecessary_characters xử lý ở bước sau)
+ *
+ * Dùng codePointAt() thay vì \p{Extended_Pictographic} để tránh lỗi
+ * double-escaping khi viết file (\\p thay vì \p làm regex thành no-op).
+ */
+const preprocessTextForModel = (rawText) => {
+  let text = String(rawText || '').trim().toLowerCase()
+
+  // 1. Xoá HTML tags (remove_html)
+  text = text.replace(/<[^>]*>/g, '')
+
+  // 2. Xoá emoji & symbol Unicode (remove_emoji) — dùng codepoint range check
+  text = removeEmojiFromText(text)
+
+  // 3. Xoá URL (remove_url)
+  text = text.replace(/https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()!@:%_+.~#?&\/=]*)/g, '')
+
+  // 4. Xoá email (remove_email)
+  text = text.replace(/[^@\s]+@[^@\s]+\.[^@\s]+/g, '')
+
+  // 5. Xoá hashtag #từ (remove_hashtags)
+  text = text.replace(/#\S+/g, '')
+
+  return text
+}
+
 const normalizeAspectToken = (value) => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
 const coerceClassPrediction = (value) => {
@@ -914,40 +975,209 @@ export const CanBoService = {
       throw err
     }
 
-    // --- Bước 1: Tiền xử lý văn bản (mô phỏng pipeline Python) ---
-    // Pipeline Python: lowercase → clean → normalize teencode → VnCoreNLP word_segment (dùng _ cho từ ghép)
-    // Ở đây JS mô phỏng bước word_segment bằng cách ghép các cụm từ ghép thường gặp thành token_underscore
+    // --- Bước 1: Tiền xử lý văn bản theo đúng pipeline Python training ---
+    // Pipeline Python (VietnameseTextPreprocessor):
+    //   lowercase → remove_html → remove_emoji → remove_url → remove_email
+    //   → remove_hashtags → remove_unnecessary_characters → word_segment (VnCoreNLP)
+    //
+    // word_segment được mô phỏng bằng COMPOUND_WORDS (thay từ ghép thành token_underscore)
+    // remove_emoji ← đây là bước trước đây bị THIẾU khiến icon/emoji không xử lý được
 
     const COMPOUND_WORDS = [
-      // Sắp xếp từ dài → ngắn để ưu tiên match cụm dài hơn
+      // === CỤM TỪ 3+ từ (ưu tiên match trước) ===
       ['vệ sinh an toàn', 'vệ_sinh_an_toàn'],
-      ['check in', 'check_in'], ['check out', 'check_out'],
-      ['nhân viên', 'nhân_viên'], ['phục vụ', 'phục_vụ'],
-      ['khách sạn', 'khách_sạn'], ['nhà hàng', 'nhà_hàng'],
-      ['phòng ốc', 'phòng_ốc'], ['vị trí', 'vị_trí'],
-      ['đồ ăn', 'đồ_ăn'], ['thức ăn', 'thức_ăn'], ['ăn uống', 'ăn_uống'],
-      ['đặt phòng', 'đặt_phòng'], ['nhận phòng', 'nhận_phòng'], ['trả phòng', 'trả_phòng'],
-      ['vệ sinh', 'vệ_sinh'], ['sạch sẽ', 'sạch_sẽ'], ['tiện nghi', 'tiện_nghi'],
-      ['hồ bơi', 'hồ_bơi'], ['bãi biển', 'bãi_biển'], ['bài đỗ xe', 'bãi_đỗ_xe'],
-      ['ăn sáng', 'ăn_sáng'], ['bữa sáng', 'bữa_sáng'], ['bữa ăn', 'bữa_ăn'],
-      ['dịch vụ', 'dịch_vụ'], ['cơ sở', 'cơ_sở'], ['trang thiết bị', 'trang_thiết_bị'],
-      ['wifi', 'wifi'], ['điều hoà', 'điều_hoà'],
-      ['không gian', 'không_gian'], ['thời gian', 'thời_gian'],
-      ['bình thường', 'bình_thường'], ['ok', 'ok']
+      ['trang thiết bị', 'trang_thiết_bị'],
+      ['đồ ăn thức uống', 'đồ_ăn_thức_uống'],
+      ['hồ chí minh', 'hồ_chí_minh'],
+      ['nhà vệ sinh', 'nhà_vệ_sinh'],
+      ['bãi đỗ xe', 'bãi_đỗ_xe'],
+      ['bãi đậu xe', 'bãi_đậu_xe'],
+      ['tầm nhìn ra biển', 'tầm_nhìn_ra_biển'],
+
+      // === CHẤT LƯỢNG / TÍNH TỪ ĐÁNH GIÁ ===
+      ['tuyệt vời', 'tuyệt_vời'],
+      ['hợp lý', 'hợp_lý'],
+      ['thoải mái', 'thoải_mái'],
+      ['thân thiện', 'thân_thiện'],
+      ['nhiệt tình', 'nhiệt_tình'],
+      ['chú ý', 'chú_ý'],
+      ['lịch sự', 'lịch_sự'],
+      ['chuyên nghiệp', 'chuyên_nghiệp'],
+      ['chu đáo', 'chu_đáo'],
+      ['tận tâm', 'tận_tâm'],
+      ['tận tình', 'tận_tình'],
+      ['ân cần', 'ân_cần'],
+      ['niềm nở', 'niềm_nở'],
+      ['vui vẻ', 'vui_vẻ'],
+      ['thú vị', 'thú_vị'],
+      ['hài lòng', 'hài_lòng'],
+      ['tuyệt hảo', 'tuyệt_hảo'],
+      ['hoàn hảo', 'hoàn_hảo'],
+      ['xuất sắc', 'xuất_sắc'],
+      ['tốt bụng', 'tốt_bụng'],
+      ['cẩn thận', 'cẩn_thận'],
+      ['tiện lợi', 'tiện_lợi'],
+      ['thoáng mát', 'thoáng_mát'],
+      ['sang trọng', 'sang_trọng'],
+      ['hiện đại', 'hiện_đại'],
+      ['bình thường', 'bình_thường'],
+      ['trung bình', 'trung_bình'],
+      ['kém chất lượng', 'kém_chất_lượng'],
+      ['tệ hại', 'tệ_hại'],
+      ['thất vọng', 'thất_vọng'],
+      ['đáng tiếc', 'đáng_tiếc'],
+      ['đáng kể', 'đáng_kể'],
+      ['đáng tiền', 'đáng_tiền'],
+      ['xứng đáng', 'xứng_đáng'],
+      ['rộng rãi', 'rộng_rãi'],
+      ['chật hẹp', 'chật_hẹp'],
+      ['yên tĩnh', 'yên_tĩnh'],
+      ['ồn ào', 'ồn_ào'],
+      ['an toàn', 'an_toàn'],
+      ['an ninh', 'an_ninh'],
+
+      // === NHÂN VIÊN / DỊCH VỤ ===
+      ['nhân viên', 'nhân_viên'],
+      ['phục vụ', 'phục_vụ'],
+      ['dịch vụ', 'dịch_vụ'],
+      ['lễ tân', 'lễ_tân'],
+      ['tiếp tân', 'tiếp_tân'],
+      ['hướng dẫn', 'hướng_dẫn'],
+      ['hỗ trợ', 'hỗ_trợ'],
+      ['tư vấn', 'tư_vấn'],
+      ['phản hồi', 'phản_hồi'],
+      ['đặt phòng', 'đặt_phòng'],
+      ['nhận phòng', 'nhận_phòng'],
+      ['trả phòng', 'trả_phòng'],
+      ['check in', 'check_in'],
+      ['check out', 'check_out'],
+
+      // === PHÒNG / CƠ SỞ VẬT CHẤT ===
+      ['khách sạn', 'khách_sạn'],
+      ['nhà hàng', 'nhà_hàng'],
+      ['nhà nghỉ', 'nhà_nghỉ'],
+      ['resort', 'resort'],
+      ['phòng ốc', 'phòng_ốc'],
+      ['phòng tắm', 'phòng_tắm'],
+      ['phòng ngủ', 'phòng_ngủ'],
+      ['phòng đơn', 'phòng_đơn'],
+      ['phòng đôi', 'phòng_đôi'],
+      ['phòng suite', 'phòng_suite'],
+      ['tầng trệt', 'tầng_trệt'],
+      ['thang máy', 'thang_máy'],
+      ['máy lạnh', 'máy_lạnh'],
+      ['điều hòa', 'điều_hòa'],
+      ['điều hoà', 'điều_hoà'],
+      ['tivi', 'tivi'],
+      ['hồ bơi', 'hồ_bơi'],
+      ['bể bơi', 'bể_bơi'],
+      ['tiện nghi', 'tiện_nghi'],
+      ['trang thiết bị', 'trang_thiết_bị'],
+      ['nội thất', 'nội_thất'],
+      ['giường ngủ', 'giường_ngủ'],
+      ['chăn gối', 'chăn_gối'],
+      ['phòng tắm', 'phòng_tắm'],
+      ['vệ sinh', 'vệ_sinh'],
+      ['sạch sẽ', 'sạch_sẽ'],
+      ['cơ sở', 'cơ_sở'],
+
+      // === ĐỒ ĂN / UỐNG ===
+      ['đồ ăn', 'đồ_ăn'],
+      ['thức ăn', 'thức_ăn'],
+      ['ăn uống', 'ăn_uống'],
+      ['đồ ăn thức uống', 'đồ_ăn_thức_uống'],
+      ['ăn sáng', 'ăn_sáng'],
+      ['bữa sáng', 'bữa_sáng'],
+      ['bữa trưa', 'bữa_trưa'],
+      ['bữa tối', 'bữa_tối'],
+      ['bữa ăn', 'bữa_ăn'],
+      ['thực đơn', 'thực_đơn'],
+      ['đồ uống', 'đồ_uống'],
+      ['cà phê', 'cà_phê'],
+      ['hải sản', 'hải_sản'],
+      ['chất lượng', 'chất_lượng'],
+
+      // === VỊ TRÍ / ĐỊA ĐIỂM ===
+      ['vị trí', 'vị_trí'],
+      ['trung tâm', 'trung_tâm'],
+      ['không gian', 'không_gian'],
+      ['khu vực', 'khu_vực'],
+      ['tầm nhìn', 'tầm_nhìn'],
+      ['view biển', 'view_biển'],
+      ['gần biển', 'gần_biển'],
+      ['bãi biển', 'bãi_biển'],
+      ['biển xanh', 'biển_xanh'],
+      ['bãi đỗ xe', 'bãi_đỗ_xe'],
+
+      // === ĐỊA DANH THƯỜNG GẶP TRONG REVIEW ===
+      ['đà nẵng', 'đà_nẵng'],
+      ['hà nội', 'hà_nội'],
+      ['hội an', 'hội_an'],
+      ['nha trang', 'nha_trang'],
+      ['đà lạt', 'đà_lạt'],
+      ['phú quốc', 'phú_quốc'],
+      ['vũng tàu', 'vũng_tàu'],
+      ['cần thơ', 'cần_thơ'],
+      ['hải phòng', 'hải_phòng'],
+      ['hồ chí minh', 'hồ_chí_minh'],
+      ['sài gòn', 'sài_gòn'],
+      ['phan thiết', 'phan_thiết'],
+      ['bình dương', 'bình_dương'],
+      ['mũi né', 'mũi_né'],
+
+      // === GIÁ CẢ / GIÁ TRỊ ===
+      ['giá cả', 'giá_cả'],
+      ['giá tiền', 'giá_tiền'],
+      ['giá rẻ', 'giá_rẻ'],
+      ['giá trị', 'giá_trị'],
+      ['giá phòng', 'giá_phòng'],
+      ['giá tốt', 'giá_tốt'],
+      ['chi phí', 'chi_phí'],
+      ['đáng tiền', 'đáng_tiền'],
+
+      // === THỜI GIAN / CHUNG ===
+      ['thời gian', 'thời_gian'],
+      ['thường xuyên', 'thường_xuyên'],
+      ['lần sau', 'lần_sau'],
+      ['lần này', 'lần_này'],
+      ['đặc biệt', 'đặc_biệt'],
+      ['nói chung', 'nói_chung'],
+      ['nhìn chung', 'nhìn_chung'],
+      ['tổng thể', 'tổng_thể'],
+      ['tổng quan', 'tổng_quan'],
+      ['so với', 'so_với'],
+      ['phù hợp', 'phù_hợp'],
+      ['thuận tiện', 'thuận_tiện'],
+      ['trải nghiệm', 'trải_nghiệm'],
+      ['yêu thích', 'yêu_thích'],
+      ['chỗ ở', 'chỗ_ở'],
+      ['nơi ở', 'nơi_ở'],
+      ['kỳ nghỉ', 'kỳ_nghỉ'],
+      ['kỳ nghỉ dưỡng', 'kỳ_nghỉ_dưỡng'],
+      ['du lịch', 'du_lịch'],
+      ['tham quan', 'tham_quan'],
+      ['quay lại', 'quay_lại'],
+      ['trở lại', 'trở_lại'],
+      ['giới thiệu', 'giới_thiệu'],
+      ['khuyến khích', 'khuyến_khích'],
+      ['khuyến mãi', 'khuyến_mãi'],
+      ['ưu đãi', 'ưu_đãi']
     ]
 
-    let processedText = normalizeModelInputText(rawText).toLowerCase()
+    // Bước 1a: Áp dụng các bước cleaning giống Python (lowercase, emoji, html, url, email, hashtag)
+    let processedText = preprocessTextForModel(rawText)
 
-    // Thay thế các cụm từ ghép thành token underscore (mô phỏng VnCoreNLP wseg)
+    // Bước 1b: Mô phỏng VnCoreNLP word segmentation — thay compound words bằng token_underscore
     for (const [phrase, token] of COMPOUND_WORDS) {
-      // Escape regex metacharacters trong phrase
       const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      processedText = processedText.replace(new RegExp(escaped, 'g'), token)
+      processedText = processedText.replace(new RegExp(escaped, 'gi'), token)
     }
 
-    // Xoá ký tự đặc biệt nhưng GIỮ _ (underscore dùng cho từ ghép đã segment)
+    // Bước 1c: remove_unnecessary_characters — chỉ giữ chữ cái (kể cả tiếng Việt), số, khoảng trắng, underscore
+    // Giống hệt: re.sub(fr"[^\sa-zA-Z0-9{VN_CHARS}]", ' ', text) trong Python
+    // NOTE: giữ _ vì là token từ ghép đã segment ở bước trên
     processedText = processedText
-      .replace(/[!"#$%&'()*+,\-./:;<=>?@[\\\]^`{|}~]/g, ' ')  // không include _
+      .replace(new RegExp(`[^\\sa-zA-Z0-9_${VN_CHARS}]`, 'g'), ' ')
       .replace(/\s+/g, ' ')
       .trim()
 
